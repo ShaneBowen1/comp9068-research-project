@@ -10,7 +10,6 @@ if __name__ == "__main__":
     target_audio_channels = input("Specify number of audio channels (e.g., 2) <Optional>: ")  # 1 for mono, 2 for stereo
     method_for_encoding = input("Specify method for encoding (e.g., libopus) <Optional>: ")
 
-
     # Set target format
     output_kwargs = {
         "f": target_format
@@ -20,15 +19,15 @@ if __name__ == "__main__":
     if target_bitrate and not target_bitrate.endswith("k"):
         target_bitrate += "k"
         output_kwargs["audio_bitrate"] = target_bitrate
-    
+
     # Set target sample rate
     if target_sample_rate:
         output_kwargs["ar"] = target_sample_rate
-    
+
     # Set target audio channels
     if target_audio_channels:
         output_kwargs["ac"] = target_audio_channels
-    
+
     # Set method for encoding
     if method_for_encoding:
         output_kwargs["acodec"] = method_for_encoding

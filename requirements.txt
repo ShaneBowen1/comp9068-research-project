@@ -1,1 +1,5 @@
 ffmpeg-python==0.2.0
+numpy==2.3.5
+pesq==0.0.4
+resampy==0.4.3
+scipy==1.17.0

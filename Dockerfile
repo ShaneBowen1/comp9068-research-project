@@ -7,17 +7,19 @@ WORKDIR /app
 # Install system dependencies including ffmpeg
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    build-essential \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip and install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+     pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY transcode_audio.py .
+COPY *.py .
 
 # Set the default command to run the script
 CMD ["python", "transcode_audio.py"]

@@ -14,5 +14,11 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
     - transcode_audio.py
         - `--volume` Mount the */data_source* folder to read input files and save transcoded files
         ```
-        docker run --rm -it --volume ./data_source:/app/data_source test python transcode_audio.py
+        docker run --rm -it --name test --volume ./data_source:/app/data_source test python transcode_audio.py
+        ```
+
+    - audio_analysis.py
+        - `--volume` Mount the */data_source* folder to read input files
+        ```
+        docker run --rm -it --name test --volume ./data_source:/app/data_source test python audio_analysis.py
         ```
