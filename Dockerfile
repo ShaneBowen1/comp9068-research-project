@@ -16,7 +16,8 @@ COPY requirements.txt .
 
 # Upgrade pip and install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-     pip install --no-cache-dir -r requirements.txt
+    pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY *.py .

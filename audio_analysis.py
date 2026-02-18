@@ -1,33 +1,46 @@
+import argparse
 import os
-import ffmpeg
 import resampy
-from pesq import pesq
-from scipy.io import wavfile
+import numpy as np
+import soundfile as sf
+import torch
+from torchmetrics.audio import PerceptualEvaluationSpeechQuality
 
-if __name__ == "__main__":
+pesq = PerceptualEvaluationSpeechQuality(fs=16000, mode='nb')  # Initialize PESQ metric with default sample rate and narrowband mode
+
+torch.set_printoptions(precision=8)
+
+def load_audio(file_path, target_sr=None):
+    """
+    :param file_path: Path to the audio file
+    :param target_sr: Target sample rate (optional)
+    :return: Normalized audio waveform as a float32 numpy array and the sample rate
+    """
+    wav_data, sr = sf.read(file_path, dtype=np.int16)
+
+    # Check if audio data is in the expected format
+    if wav_data.dtype != np.int16:
+        raise ValueError(f'Bad sample type: {wav_data.dtype}')
+
+    # Resample if target sample rate is specified
+    if target_sr and sr != target_sr:
+        wav_data = resampy.resample(wav_data, sr, target_sr)
+        sr = target_sr
+
+    # Convert to mono if audio is stereo
+    if wav_data.ndim > 1:
+        wav_data = np.mean(wav_data, axis=1)  # Convert to mono by averaging channels
+
+    wav = wav_data / 32768.0  # Normalize to [-1, 1]
+    wav = wav.astype('float32')  # Convert to float32 for processing
+    return wav, sr
+
+def main(target_format, target_bitrate="16k", num_of_samples=0):
+
+    assert target_format, "Target format is required. Please specify using --target_format."
 
     # Array for storing PESQ scores
     pesq_scores = []
-
-    # Set target format and bitrate for degraded audio files
-    target_format = input("Specify format to convert <Required>: ")
-    target_bitrate = input("Specify bitrate (e.g., 128) <Optional>: ")
-    target_sample_rate = input("Specify sample rate (e.g., 44100) <Optional>: ")
-    target_audio_channels = input("Specify number of audio channels (e.g., 2) <Optional>: ")  # 1 for mono, 2 for stereo
-    num_of_samples = input("Specify number of samples to calculate PESQ for (e.g., 100) <Optional>: ")
-
-    # Set default values for optional parameters if not provided
-    if not target_bitrate:
-        target_bitrate = "default"  # Default to 'default' if not specified
-    elif target_bitrate and not target_bitrate.endswith("k"):
-        target_bitrate += "k"
-    if not target_sample_rate:
-        target_sample_rate = 16000  # Default to 16 kHz if not specified
-    if not target_audio_channels:
-        target_audio_channels = "1"  # Default to mono if not specified
-    num_of_samples = int(num_of_samples) if num_of_samples else 0  # Default to 0 (all samples) if not specified
-
-    band = 'nb' if target_audio_channels == "1" else 'wb'  # Use narrowband for mono and wideband for stereo
 
     input_folder = "./data_source/clean/wavs/"
     degraded_folder = f"./data_source/{target_format}/{target_bitrate}/"
@@ -42,38 +55,26 @@ if __name__ == "__main__":
         if not os.path.isfile(degraded_file):
             print(f"Degraded file {degraded_file} does not exist. Stopping...")
             if len(pesq_scores) > 0:
-                print(f"Average PESQ score for {len(pesq_scores)} samples: {round(sum(pesq_scores) / len(pesq_scores), 4)}")
+                print(f"Processed {len(pesq_scores)} samples. Average PESQ score: {round(sum(pesq_scores) / len(pesq_scores), 4)}")
             break
 
-        f_name = os.path.splitext(filename)[0]
+        # 2. Load reference and degraded files
+        deg_wav, deg_sr = load_audio(degraded_file)
+        ref_wav, _ = load_audio(input_file, target_sr=deg_sr)  # Resample reference to match degraded sample rate if necessary
 
-        # 2. Convert degraded audio file to WAV if necessary for PESQ calculation
-        if not degraded_file.endswith(".wav"):
-            temp_wav_file = os.path.join(degraded_folder, f"{f_name}_temp.wav")
-            stream = ffmpeg.input(degraded_file)
-            stream = ffmpeg.output(stream, temp_wav_file, acodec='pcm_s16le', ac=1, ar=target_sample_rate)
-            try:
-                ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
-                print(f"Converted {degraded_file} to temporary WAV file for PESQ calculation.")
-            except ffmpeg.Error as e:
-                print(f"An error occurred while converting {degraded_file} to WAV: {e.stderr.decode()}")
-                continue
+        # Trim to ensure same length
+        if len(ref_wav) != len(deg_wav):
+            min_length = min(len(ref_wav), len(deg_wav))
+            ref_wav = ref_wav[:min_length]
+            deg_wav = deg_wav[:min_length]
 
-        # Read reference and degraded audio files
-        if not degraded_file.endswith(".wav"):
-            deg_rate, deg_data = wavfile.read(temp_wav_file)
-            os.remove(temp_wav_file)  # Clean up temporary file
-        else:
-            deg_rate, deg_data = wavfile.read(degraded_file)
-
-        # Resample reference audio if sample rates do not match
-        ref_rate, ref_data = wavfile.read(input_file)
-        if ref_rate != deg_rate:
-            ref_data = resampy.resample(ref_data, ref_rate, deg_rate)
+        # Convert to tensor
+        ref_tensor = torch.tensor(ref_wav, dtype=torch.float32)
+        deg_tensor = torch.tensor(deg_wav, dtype=torch.float32)
 
         # 3. Calculate PESQ score
         try:
-            pesq_score = pesq(deg_rate, ref_data, deg_data, band)
+            pesq_score = pesq(ref_tensor, deg_tensor).item()
             pesq_scores.append(pesq_score)
             print(f"PESQ score for {degraded_file}: {pesq_score}")
         except Exception as e:
@@ -81,9 +82,24 @@ if __name__ == "__main__":
             continue
 
         if len(pesq_scores) == num_of_samples:
-            print(f"Average PESQ score for {len(pesq_scores)} samples: {round(sum(pesq_scores) / len(pesq_scores), 4)}")
+            print(f"Processed {len(pesq_scores)} samples. Average PESQ score: {round(sum(pesq_scores) / len(pesq_scores), 4)}")
             break
 
         input("Press Enter to continue...")
 
+    if len(pesq_scores) > 0:
+        print(f"Processed {len(pesq_scores)} samples. Average PESQ score: {round(sum(pesq_scores) / len(pesq_scores), 4)}")
     print("Audio analysis completed.")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Audio Analysis Script")
+    parser.add_argument("--target_format", type=str, required=True, help="Specify format to convert (e.g., wav, opus) <Required>")
+    parser.add_argument("--target_bitrate", type=int, default=16, help="Specify bitrate (e.g., 16) <Optional>")
+    parser.add_argument("--num_of_samples", type=int, default=0, help="Specify number of samples to calculate PESQ for (e.g., 100) <Optional>")
+    args = parser.parse_args()
+
+    if args.target_bitrate:
+        args.target_bitrate = f"{args.target_bitrate}k"
+    target_bitrate = args.target_bitrate
+
+    main(args.target_format, args.target_bitrate, args.num_of_samples)
