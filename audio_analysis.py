@@ -2,6 +2,7 @@ import argparse
 import os
 import resampy
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import soundfile as sf
 import torch
@@ -10,7 +11,9 @@ from torchmetrics.audio import (
     PerceptualEvaluationSpeechQuality,
     ShortTimeObjectiveIntelligibility,
     ScaleInvariantSignalDistortionRatio,
-    ScaleInvariantSignalNoiseRatio
+    ScaleInvariantSignalNoiseRatio,
+    SignalDistortionRatio,
+    SignalNoiseRatio
 )
 
 class AudioLoader:
@@ -21,11 +24,7 @@ class AudioLoader:
         :param target_sr: Target sample rate (optional)
         :return: Normalized audio waveform as a float32 numpy array and the sample rate
         """
-        wav_data, sr = sf.read(file_path, dtype=np.int16)
-
-        # Check if audio data is in the expected format
-        if wav_data.dtype != np.int16:
-            raise ValueError(f'Bad sample type: {wav_data.dtype}')
+        wav_data, sr = sf.read(file_path, dtype='float32')  # Normalized -1.0 to 1.0
 
         # Resample if target sample rate is specified
         if target_sr and sr != target_sr:
@@ -36,9 +35,7 @@ class AudioLoader:
         if wav_data.ndim > 1:
             wav_data = np.mean(wav_data, axis=1)  # Convert to mono by averaging channels
 
-        wav = wav_data / 32768.0  # Normalize to [-1, 1]
-        wav = wav.astype('float32')  # Convert to float32 for processing
-        return wav, sr
+        return wav_data, sr
 
 
 class AudioMetric:
@@ -88,7 +85,9 @@ class MetricFactory:
             'PESQ': PerceptualEvaluationSpeechQuality(fs=16000, mode='nb'),
             'STOI': ShortTimeObjectiveIntelligibility(fs=16000),
             'SI-SDR': ScaleInvariantSignalDistortionRatio(),
-            'SI-SNR': ScaleInvariantSignalNoiseRatio()
+            'SI-SNR': ScaleInvariantSignalNoiseRatio(),
+            'SDR': SignalDistortionRatio(),
+            'SNR': SignalNoiseRatio()
         }
 
         metrics = []
@@ -161,23 +160,29 @@ class AudioAnalyzer:
         return {metric.name: metric.average_score() for metric in self.metrics}
 
 
-def plot_results(results):
+def plot_results(results_df, title, xlabel, ylabel):
     """
-    :param results: Dictionary of the form {metric_name: {bitrate: avg_score}}
+    :param results_df: DataFrame of the form {bitrate: {metric_name: avg_score}}
+    :param title: Title of the plot
+    :param xlabel: Label for x-axis
+    :param ylabel: Label for y-axis
     """
-    for metric_name, scores in results.items():
-        plt.plot(list(scores.keys()), list(scores.values()), marker='o', label=metric_name)
-    
-    plt.title('Average Metric Scores by Bitrate')
-    plt.xlabel('Bitrate (kbps)')
-    plt.ylabel('Average Score')
+    for metric_name in results_df.columns:
+        plt.plot(results_df.index, results_df[metric_name], marker='o', label=metric_name)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
     plt.legend()
     plt.grid()
     plt.show()
 
-    # save figure
-    plt.savefig('metrics.png')
+    # check if results directory exists, if not create it
+    if not os.path.exists('./results'):
+        os.makedirs('./results')
 
+    # save figure
+    plt.savefig(f'./results/{title}.png')
+    plt.close()
 
 def main(format, metric, bitrate=["16k"], samples=0):
     """
@@ -203,9 +208,42 @@ def main(format, metric, bitrate=["16k"], samples=0):
         avg_scores = analyzer.get_avg_scores()
         for metric_name, avg_score in avg_scores.items():
             results[metric_name][bitrate] = avg_score
+
+    # Convert to DataFrame
+    results_df = pd.DataFrame(results)
+
+    # Plot results on a single graph
+    plot_results(results_df, title=f"Mean {', '.join(results_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score")
+
+    # Plot normalised results
+    if 'PESQ' in results_df.columns:
+        MIN = -0.5
+        MAX = 4.5
+        normalized_pesq = (results_df['PESQ'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
+        normalized_df = normalized_pesq.to_frame()  # Convert Series to DataFrame for plotting
+        plot_results(results_df['PESQ'].to_frame(), title="Mean PESQ Scores", xlabel="Bitrate (kbps)", ylabel="PESQ Score")
+        plot_results(normalized_df, title="Normalised PESQ Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
     
-    # Plot results
-    plot_results(results)
+    if 'STOI' in results_df.columns:
+        MIN = 0.0
+        MAX = 1.0
+        normalized_stoi = (results_df['STOI'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
+        normalized_df = normalized_stoi.to_frame()  # Convert Series to DataFrame for plotting
+        plot_results(results_df['STOI'].to_frame(), title="Mean STOI Scores", xlabel="Bitrate (kbps)", ylabel="STOI Score")
+        plot_results(normalized_df, title="Normalised STOI Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
+
+    if 'SI-SDR' in results_df.columns or 'SI-SNR' in results_df.columns or 'SDR' in results_df.columns or 'SNR' in results_df.columns:
+        normalized_df = pd.DataFrame()
+        for metric_name in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']:
+            if metric_name in results_df.columns:
+                min_score = results_df[metric_name].min()
+                max_score = results_df[metric_name].max()
+                normalized_metric = (results_df[metric_name] - min_score) / (max_score - min_score)  # Normalize to [0, 1]
+                normalized_df[metric_name] = normalized_metric  # Add to DataFrame with metric name as column name
+        
+        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]
+        plot_results(df, title=f"Mean {', '.join(df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score (dB)")
+        plot_results(normalized_df, title=f"Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
 
     print("Audio analysis completed.")
 

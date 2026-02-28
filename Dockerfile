@@ -24,4 +24,3 @@ COPY *.py .
 
 # Set the default command to run the script
 CMD ["python", "transcode_audio.py"]
-
