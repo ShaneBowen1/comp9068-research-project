@@ -79,7 +79,7 @@ class AudioMetric:
 
 class MetricFactory:
     @staticmethod
-    def create_metrics(metric_name):
+    def create_metrics(metric):
         """
         :param metric_name: List of metric names to create
         :return: List of AudioMetric instances
@@ -92,7 +92,7 @@ class MetricFactory:
         }
 
         metrics = []
-        for name in metric_name:
+        for name in metric:
             if name in available_metrics:
                 metrics.append(AudioMetric(name, available_metrics[name]))
             else:
@@ -107,16 +107,15 @@ class AudioAnalyzer:
         self.degraded_folder = degraded_folder
         self.metrics = metrics
 
-    def analyze(self, target_format, num_of_samples=0):
+    def analyze(self, format, samples=0):
         """
-        :param target_format: Format of the degraded audio files (e.g., 'opus')
-        :param num_of_samples: Number of samples to process for each metric (0 for all samples)
+        :param format: Format of the degraded audio files (e.g., 'opus')
+        :param samples: Number of samples to process for each metric (0 for all samples)
         """
-        processed = 0
-        for filename in os.listdir(self.input_folder):
+        for idx, filename in enumerate(os.listdir(self.input_folder), start=1):
             if filename.endswith(".wav"):
                 input_file = os.path.join(self.input_folder, filename)
-                degraded_file = os.path.join(self.degraded_folder, filename.replace(".wav", f".{target_format}"))
+                degraded_file = os.path.join(self.degraded_folder, filename.replace(".wav", f".{format}"))
 
             # check if degraded file exists
             if not os.path.isfile(degraded_file):
@@ -143,10 +142,9 @@ class AudioAnalyzer:
                 if score is not None:
                     print(f"{metric.name} score for {degraded_file}: {score}")
 
-                if num_of_samples > 0 and processed == num_of_samples:
-                    break
-            processed += 1
-        
+            if samples > 0 and idx == samples:
+                break
+
     def display_results(self, bitrate=None):
         """
         :param bitrate: Bitrate of the degraded audio files (optional, for display purposes)
@@ -181,18 +179,24 @@ def plot_results(results):
     plt.savefig('metrics.png')
 
 
-def main(target_format, target_bitrate=["16k"], num_of_samples=0, metric_names=None):
+def main(format, metric, bitrate=["16k"], samples=0):
+    """
+    :param format: Format of the degraded audio files (e.g., 'opus')
+    :param bitrate: List of bitrates of the degraded audio files (e.g., ['16k', '32k'])
+    :param samples: Number of samples to process for each metric (0 for all samples)
+    :param metric: List of metric names to calculate (e.g., ['PESQ', 'STOI'])
+    """
     
     print("Starting audio analysis...")
 
     input_folder = "./data_source/clean/wavs/"
     results = defaultdict(dict)
 
-    for bitrate in target_bitrate:
-        degraded_folder = f"./data_source/{target_format}/{bitrate}/"
-        metrics = MetricFactory.create_metrics(metric_names)
+    for bitrate in bitrate:
+        degraded_folder = f"./data_source/{format}/{bitrate}/"
+        metrics = MetricFactory.create_metrics(metric)
         analyzer = AudioAnalyzer(input_folder, degraded_folder, metrics)
-        analyzer.analyze(target_format, num_of_samples)
+        analyzer.analyze(format, samples)
         analyzer.display_results(bitrate)
         
         # Store average scores for graphing
@@ -207,14 +211,13 @@ def main(target_format, target_bitrate=["16k"], num_of_samples=0, metric_names=N
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Audio Analysis Script")
-    parser.add_argument("--target_format", type=str, required=True, help="Specify format to convert (e.g., wav, opus) <Required>")
-    parser.add_argument("--target_metric", type=str, nargs="+", required=True, help="Specify metric to calculate (e.g., PESQ, STOI, SI-SDR, SI-SNR) <Required>")
-    parser.add_argument("--target_bitrate", type=int, nargs="+", default=[16], help="Specify bitrate (e.g., 16) <Optional>")
-    parser.add_argument("--num_of_samples", type=int, default=0, help="Specify number of samples to calculate PESQ for (e.g., 100) <Optional>")
+    parser.add_argument("--format", type=str, required=True, help="Specify format to convert (e.g., wav, opus) <Required>")
+    parser.add_argument("--metric", type=str, nargs="+", required=True, help="Specify metric to calculate (e.g., PESQ, STOI, SI-SDR, SI-SNR) <Required>")
+    parser.add_argument("--bitrate", type=int, nargs="+", default=[16], help="Specify bitrate (e.g., 16) <Optional>")
+    parser.add_argument("--samples", type=int, default=0, help="Specify number of samples to calculate PESQ for (e.g., 100) <Optional>")
     args = parser.parse_args()
 
-    if args.target_bitrate:
-        args.target_bitrate = [f"{bitrate}k" for bitrate in args.target_bitrate]
-    target_bitrate = args.target_bitrate
+    if args.bitrate:
+        args.bitrate = [f"{bitrate}k" for bitrate in args.bitrate]
 
-    main(args.target_format, args.target_bitrate, args.num_of_samples, args.target_metric)
+    main(args.format, args.metric, args.bitrate, args.samples)
