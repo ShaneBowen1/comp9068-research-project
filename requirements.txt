@@ -1,6 +1,7 @@
 ffmpeg-python==0.2.0
 matplotlib==3.10.8
 numpy==2.3.5
+pandas==3.0.1
 pesq==0.0.4
 pystoi==0.4.1
 resampy==0.4.3

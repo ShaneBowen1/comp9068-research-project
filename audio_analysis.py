@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 import resampy
 import numpy as np
 import pandas as pd
@@ -152,6 +153,7 @@ class AudioAnalyzer:
         print(f"\nResults for bitrate: {bitrate}")
         for metric in self.metrics:
             print(f"Processed {metric.count()} samples. Average {metric.name} score: {metric.average_score()}")
+        print()
 
     def get_avg_scores(self):
         """
@@ -174,15 +176,48 @@ def plot_results(results_df, title, xlabel, ylabel):
     plt.ylabel(ylabel)
     plt.legend()
     plt.grid()
-    plt.show()
 
     # check if results directory exists, if not create it
-    if not os.path.exists('./results'):
-        os.makedirs('./results')
+    if not os.path.exists('./results/plots'):
+        os.makedirs('./results/plots')
 
     # save figure
-    plt.savefig(f'./results/{title}.png')
+    plt.savefig(f'./results/plots/{title}_{int(time.time())}.png')
     plt.close()
+
+def normalise_and_plot_results(results_df):
+    """
+    :param results_df: DataFrame of the form {bitrate: {metric_name: avg_score}}
+    """
+
+    if 'PESQ' in results_df.columns:
+        MIN = -0.5
+        MAX = 4.5
+        normalized_pesq = (results_df['PESQ'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
+        normalized_df = normalized_pesq.to_frame()  # Convert Series to DataFrame for plotting
+        plot_results(normalized_df, title="Normalised PESQ Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
+
+    if all(col in results_df.columns for col in ['PESQ', 'STOI']):
+        # Combine normalized PESQ and STOI into a single DataFrame for plotting
+        combined_normalized_df = pd.DataFrame({
+            'PESQ': normalized_pesq,
+            'STOI': results_df['STOI']  # STOI is already in the range [0, 1]
+        })
+        plot_results(combined_normalized_df, title="Normalised PESQ and STOI Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
+
+    if any(col in results_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
+        normalized_df = pd.DataFrame()
+
+        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]  # Select only the columns that are present in results_df
+        min_score = df.min().min()  # Get the minimum score across all metrics
+        max_score = df.max().max()  # Get the maximum score across all metrics
+
+        for metric_name, series in df.items():
+            normalised_metric = (series - min_score) / (max_score - min_score)  # Normalize to [0, 1]
+            normalized_df[metric_name] = normalised_metric  # Add to DataFrame with metric name as column name
+
+        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]
+        plot_results(normalized_df, title=f"Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
 
 def main(format, metric, bitrate=["16k"], samples=0):
     """
@@ -191,7 +226,7 @@ def main(format, metric, bitrate=["16k"], samples=0):
     :param samples: Number of samples to process for each metric (0 for all samples)
     :param metric: List of metric names to calculate (e.g., ['PESQ', 'STOI'])
     """
-    
+
     print("Starting audio analysis...")
 
     input_folder = "./data_source/clean/wavs/"
@@ -212,38 +247,29 @@ def main(format, metric, bitrate=["16k"], samples=0):
     # Convert to DataFrame
     results_df = pd.DataFrame(results)
 
+    # check if directory exists
+    if not os.path.exists('./results/data'):
+        os.makedirs('./results/data')
+
+    # save the df so can easily load it later for plotting without needing to recalculate metrics
+    results_df.to_csv('./results/data/metric_results.csv')
+
+    # # read from csv
+    # results_df = pd.read_csv('./results/data/metric_results.csv', index_col=0)
+
     # Plot results on a single graph
     plot_results(results_df, title=f"Mean {', '.join(results_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score")
 
-    # Plot normalised results
+    # Individual plots for each metric
     if 'PESQ' in results_df.columns:
-        MIN = -0.5
-        MAX = 4.5
-        normalized_pesq = (results_df['PESQ'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
-        normalized_df = normalized_pesq.to_frame()  # Convert Series to DataFrame for plotting
         plot_results(results_df['PESQ'].to_frame(), title="Mean PESQ Scores", xlabel="Bitrate (kbps)", ylabel="PESQ Score")
-        plot_results(normalized_df, title="Normalised PESQ Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
-    
     if 'STOI' in results_df.columns:
-        MIN = 0.0
-        MAX = 1.0
-        normalized_stoi = (results_df['STOI'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
-        normalized_df = normalized_stoi.to_frame()  # Convert Series to DataFrame for plotting
         plot_results(results_df['STOI'].to_frame(), title="Mean STOI Scores", xlabel="Bitrate (kbps)", ylabel="STOI Score")
-        plot_results(normalized_df, title="Normalised STOI Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
-
-    if 'SI-SDR' in results_df.columns or 'SI-SNR' in results_df.columns or 'SDR' in results_df.columns or 'SNR' in results_df.columns:
-        normalized_df = pd.DataFrame()
-        for metric_name in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']:
-            if metric_name in results_df.columns:
-                min_score = results_df[metric_name].min()
-                max_score = results_df[metric_name].max()
-                normalized_metric = (results_df[metric_name] - min_score) / (max_score - min_score)  # Normalize to [0, 1]
-                normalized_df[metric_name] = normalized_metric  # Add to DataFrame with metric name as column name
-        
-        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]
+    if any(col in results_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
+        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]  # Select only the columns that are present in results_df
         plot_results(df, title=f"Mean {', '.join(df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score (dB)")
-        plot_results(normalized_df, title=f"Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
+
+    normalise_and_plot_results(results_df)
 
     print("Audio analysis completed.")
 
