@@ -63,6 +63,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample_rate", type=int, help="Target sample rate (e.g., 22050)")
     parser.add_argument("--channels", type=int, default=1, help="Number of audio channels (e.g., 1 for mono, 2 for stereo)")
     parser.add_argument("--codec", type=str, help="Method for encoding (e.g., libopus)")
+    parser.add_argument("--application", type=str, help="Application type for encoding (e.g., voip, audio, lowdelay)")
     parser.add_argument("--samples", type=int, default=0, help="Number of samples to convert (0 for all)")
     args = parser.parse_args()
 
@@ -87,4 +88,7 @@ if __name__ == "__main__":
     if args.codec:
         output_kwargs["acodec"] = args.codec
     
+    if args.application:
+        output_kwargs["application"] = args.application
+
     main(output_kwargs, args.bitrate, args.samples)
