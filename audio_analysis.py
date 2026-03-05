@@ -219,10 +219,12 @@ def normalise_and_plot_results(results_df):
         df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]
         plot_results(normalized_df, title=f"Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
 
-def main(format, metric, bitrate=["16k"], samples=0):
+def main(format, metric, bitrate=["16k"], codec="libopus", application="audio", samples=0):
     """
     :param format: Format of the degraded audio files (e.g., 'opus')
     :param bitrate: List of bitrates of the degraded audio files (e.g., ['16k', '32k'])
+    :param codec: Codec for encoding (e.g., 'libopus')
+    :param application: Application type for encoding (e.g., 'voip', 'audio', 'lowdelay')
     :param samples: Number of samples to process for each metric (0 for all samples)
     :param metric: List of metric names to calculate (e.g., ['PESQ', 'STOI'])
     """
@@ -233,7 +235,7 @@ def main(format, metric, bitrate=["16k"], samples=0):
     results = defaultdict(dict)
 
     for bitrate in bitrate:
-        degraded_folder = f"./data_source/{format}/{bitrate}/"
+        degraded_folder = f"./data_source/{codec}/{application}/{bitrate}/"
         metrics = MetricFactory.create_metrics(metric)
         analyzer = AudioAnalyzer(input_folder, degraded_folder, metrics)
         analyzer.analyze(format, samples)
@@ -278,10 +280,12 @@ if __name__ == "__main__":
     parser.add_argument("--format", type=str, required=True, help="Specify format to convert (e.g., wav, opus) <Required>")
     parser.add_argument("--metric", type=str, nargs="+", required=True, help="Specify metric to calculate (e.g., PESQ, STOI, SI-SDR, SI-SNR) <Required>")
     parser.add_argument("--bitrate", type=int, nargs="+", default=[16], help="Specify bitrate (e.g., 16) <Optional>")
+    parser.add_argument("--codec", type=str, default="libopus", help="Method for encoding (e.g., libopus)")
+    parser.add_argument("--application", type=str, default="audio", help="Application type for encoding (e.g., voip, audio, lowdelay)")
     parser.add_argument("--samples", type=int, default=0, help="Specify number of samples to calculate PESQ for (e.g., 100) <Optional>")
     args = parser.parse_args()
 
     if args.bitrate:
         args.bitrate = [f"{bitrate}k" for bitrate in args.bitrate]
 
-    main(args.format, args.metric, args.bitrate, args.samples)
+    main(args.format, args.metric, args.bitrate, args.codec, args.application, args.samples)

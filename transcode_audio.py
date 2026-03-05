@@ -23,7 +23,7 @@ def main(output_kwargs, bitrates, samples=0):
             if filename.endswith(".wav"):
                 input_file = os.path.join(input_folder, filename)
 
-                output_folder = f"./data_source/{args.format}/{bitrate}/"
+                output_folder = f"./data_source/{args.codec}/{args.application}/{bitrate}/"
                 if not os.path.exists(output_folder):
                     os.makedirs(output_folder)
                 f_name = os.path.splitext(filename)[0]
@@ -35,7 +35,7 @@ def main(output_kwargs, bitrates, samples=0):
                 try:
                     # 3. Run the ffmpeg command
                     ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
-                    print(f"Converted {input_file} to {output_file} in {args.format} format.")
+                    print(f"Converted {input_file} to {output_file} using {args.codec} codec in {args.format} format.")
                 except ffmpeg.Error as e:
 
                     if e.stderr:
@@ -62,14 +62,15 @@ if __name__ == "__main__":
     parser.add_argument("--bitrate", nargs="+", type=int, default=[16], help="Target bitrate (e.g., 128)")
     parser.add_argument("--sample_rate", type=int, help="Target sample rate (e.g., 22050)")
     parser.add_argument("--channels", type=int, default=1, help="Number of audio channels (e.g., 1 for mono, 2 for stereo)")
-    parser.add_argument("--codec", type=str, help="Method for encoding (e.g., libopus)")
-    parser.add_argument("--application", type=str, help="Application type for encoding (e.g., voip, audio, lowdelay)")
+    parser.add_argument("--codec", type=str, default="libopus", help="Method for encoding (e.g., libopus)")
+    parser.add_argument("--application", type=str, default="audio", help="Application type for encoding (e.g., voip, audio, lowdelay)")
     parser.add_argument("--samples", type=int, default=0, help="Number of samples to convert (0 for all)")
     args = parser.parse_args()
 
     # Set target format
     output_kwargs = {
-        "f": args.format
+        "f": args.format,
+        "strict": "-2"  # Allow experimental codecs if needed
     }
 
     # Set target bitrate

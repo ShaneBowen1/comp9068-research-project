@@ -9,6 +9,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     ffmpeg \
+    opus-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
