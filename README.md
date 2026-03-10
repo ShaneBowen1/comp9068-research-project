@@ -15,10 +15,11 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         - `--volume` Mount the */data_source* folder to read input files and save 
         transcoded files
         - `--format` Specify audio format to transcode (e.g., mp3, opus) *Required
-        - `--bitrate` Specify bitrate to transcode (e.g., 128) *Optional
+        - `--bitrate` Specify bitrate to transcode (e.g., 128) **Default=\[16\]
         - `--sample_rate` Specify sample rate to transcode (e.g., 22050) *Optional
         - `--channels` Specify number of audio channels  (e.g., 1 for mono, 2 for stereo) **Default=1
-        - `--codec` Specify method for encoding (e.g., libopus) *Optional
+        - `--codec` Specify method for encoding (e.g., libopus) **Default=libopus
+        - `--application` Application type for encoding (e.g., voip, audio, lowdelay) **Default=audio
         - `--samples` Specify number of samples (e.g., 100) **Default=all
         ```
         docker run --rm -it --name test --volume ./data_source:/app/data_source test python transcode_audio.py --format opus
@@ -29,6 +30,8 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         - `--format` Specify format to analyse (e.g., wav, opus) *Required
         - `--metric` Specify metric to calculate (e.g., PESQ, STOI) *Required
         - `--bitrate` Specify bitrate (e.g., 128) *Optional **Default=16
+        - `--codec` Specify method for encoding (e.g., libopus) **Default=libopus
+        - `--application` Application type for encoding (e.g., voip, audio, lowdelay) **Default=audio
         - `--samples` Specify number of samples (e.g., 100) **Default=all
         ```
         docker run --rm -it --name test --volume ./data_source:/app/data_source test python audio_analysis.py --format opus --metric PESQ

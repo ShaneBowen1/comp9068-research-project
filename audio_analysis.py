@@ -1,3 +1,4 @@
+# %%
 import argparse
 import os
 import time
@@ -5,6 +6,7 @@ import resampy
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import soundfile as sf
 import torch
 from collections import defaultdict
@@ -162,12 +164,13 @@ class AudioAnalyzer:
         return {metric.name: metric.average_score() for metric in self.metrics}
 
 
-def plot_results(results_df, title, xlabel, ylabel):
+def plot_results(results_df, title, xlabel, ylabel, y_limit=None):
     """
     :param results_df: DataFrame of the form {bitrate: {metric_name: avg_score}}
-    :param title: Title of the plot
+    :param title: Title of the plot 
     :param xlabel: Label for x-axis
     :param ylabel: Label for y-axis
+    :param y_limit: Tuple specifying y-axis limits (optional)
     """
     for metric_name in results_df.columns:
         plt.plot(results_df.index, results_df[metric_name], marker='o', label=metric_name)
@@ -177,6 +180,10 @@ def plot_results(results_df, title, xlabel, ylabel):
     plt.legend()
     plt.grid()
 
+    # Set y-axis limits if specified
+    if y_limit:
+        plt.ylim(y_limit)
+
     # check if results directory exists, if not create it
     if not os.path.exists('./results/plots'):
         os.makedirs('./results/plots')
@@ -185,8 +192,9 @@ def plot_results(results_df, title, xlabel, ylabel):
     plt.savefig(f'./results/plots/{title}_{int(time.time())}.png')
     plt.close()
 
-def normalise_and_plot_results(results_df):
+def normalise_and_plot_results(codec, results_df):
     """
+    :param codec: Codec name for display purposes
     :param results_df: DataFrame of the form {bitrate: {metric_name: avg_score}}
     """
 
@@ -195,7 +203,7 @@ def normalise_and_plot_results(results_df):
         MAX = 4.5
         normalized_pesq = (results_df['PESQ'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
         normalized_df = normalized_pesq.to_frame()  # Convert Series to DataFrame for plotting
-        plot_results(normalized_df, title="Normalised PESQ Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
+        plot_results(normalized_df, title=f"{codec} - Normalised PESQ Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
 
     if all(col in results_df.columns for col in ['PESQ', 'STOI']):
         # Combine normalized PESQ and STOI into a single DataFrame for plotting
@@ -203,7 +211,7 @@ def normalise_and_plot_results(results_df):
             'PESQ': normalized_pesq,
             'STOI': results_df['STOI']  # STOI is already in the range [0, 1]
         })
-        plot_results(combined_normalized_df, title="Normalised PESQ and STOI Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
+        plot_results(combined_normalized_df, title=f"{codec} - Normalised PESQ and STOI Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
 
     if any(col in results_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
         normalized_df = pd.DataFrame()
@@ -217,13 +225,13 @@ def normalise_and_plot_results(results_df):
             normalized_df[metric_name] = normalised_metric  # Add to DataFrame with metric name as column name
 
         df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]
-        plot_results(normalized_df, title=f"Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score")
+        plot_results(normalized_df, title=f"{codec} - Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
 
-def main(format, metric, bitrate=["16k"], codec="libopus", application="audio", samples=0):
+def main(format, metric, bitrates=["16k"], codecs=["libopus"], application="audio", samples=0):
     """
     :param format: Format of the degraded audio files (e.g., 'opus')
-    :param bitrate: List of bitrates of the degraded audio files (e.g., ['16k', '32k'])
-    :param codec: Codec for encoding (e.g., 'libopus')
+    :param bitrates: List of bitrates of the degraded audio files (e.g., ['16k', '32k'])
+    :param codecs: List of codecs for encoding (e.g., ['libopus'])
     :param application: Application type for encoding (e.g., 'voip', 'audio', 'lowdelay')
     :param samples: Number of samples to process for each metric (0 for all samples)
     :param metric: List of metric names to calculate (e.g., ['PESQ', 'STOI'])
@@ -231,56 +239,78 @@ def main(format, metric, bitrate=["16k"], codec="libopus", application="audio", 
 
     print("Starting audio analysis...")
 
-    input_folder = "./data_source/clean/wavs/"
-    results = defaultdict(dict)
-
-    for bitrate in bitrate:
-        degraded_folder = f"./data_source/{codec}/{application}/{bitrate}/"
-        metrics = MetricFactory.create_metrics(metric)
-        analyzer = AudioAnalyzer(input_folder, degraded_folder, metrics)
-        analyzer.analyze(format, samples)
-        analyzer.display_results(bitrate)
-        
-        # Store average scores for graphing
-        avg_scores = analyzer.get_avg_scores()
-        for metric_name, avg_score in avg_scores.items():
-            results[metric_name][bitrate] = avg_score
-
-    # Convert to DataFrame
-    results_df = pd.DataFrame(results)
-
     # check if directory exists
     if not os.path.exists('./results/data'):
         os.makedirs('./results/data')
 
-    # save the df so can easily load it later for plotting without needing to recalculate metrics
-    results_df.to_csv('./results/data/metric_results.csv')
+    input_folder = "./data_source/clean/wavs/"
+    result_dfs = {}  # Dict to store DataFrames for each codec
+    results = defaultdict(dict)
 
-    # # read from csv
-    # results_df = pd.read_csv('./results/data/metric_results.csv', index_col=0)
+    for codec in codecs:
+        print(f"Analyzing results for codec: {codec}")
+        for bitrate in bitrates:
+            degraded_folder = f"./data_source/{codec}/{application}/{bitrate}/"
+            metrics = MetricFactory.create_metrics(metric)
+            analyzer = AudioAnalyzer(input_folder, degraded_folder, metrics)
+            analyzer.analyze(format, samples)
+            analyzer.display_results(bitrate)
 
-    # Plot results on a single graph
-    plot_results(results_df, title=f"Mean {', '.join(results_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score")
+            # Store average scores for graphing
+            avg_scores = analyzer.get_avg_scores()
+            for metric_name, avg_score in avg_scores.items():
+                results[metric_name][bitrate] = avg_score
 
-    # Individual plots for each metric
-    if 'PESQ' in results_df.columns:
-        plot_results(results_df['PESQ'].to_frame(), title="Mean PESQ Scores", xlabel="Bitrate (kbps)", ylabel="PESQ Score")
-    if 'STOI' in results_df.columns:
-        plot_results(results_df['STOI'].to_frame(), title="Mean STOI Scores", xlabel="Bitrate (kbps)", ylabel="STOI Score")
-    if any(col in results_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
-        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]  # Select only the columns that are present in results_df
-        plot_results(df, title=f"Mean {', '.join(df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score (dB)")
+        # Convert to DataFrame
+        results_df = pd.DataFrame(results)
 
-    normalise_and_plot_results(results_df)
+        # Store in dfs
+        result_dfs[codec] = results_df
+
+        # save the df so can easily load it later for plotting without needing to recalculate metrics
+        results_df.to_csv(f'./results/data/{codec}_metric_results_{int(time.time())}.csv', index_label="Bitrate")
+    
+    # # Plotting per codec results
+    # for codec, df in result_dfs.items():
+
+    #     print(f"\nFinal results for codec: {codec}")
+
+    #     # Plot results on a single graph
+    #     plot_results(results_df, title=f"{codec} - Mean {', '.join(results_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score")
+
+
+    #     # Individual plots for each metric
+    #     if 'PESQ' in results_df.columns:
+    #         plot_results(results_df['PESQ'].to_frame(), title=f"{codec} - Mean PESQ Scores", xlabel="Bitrate (kbps)", ylabel="PESQ Score")
+    #     if 'STOI' in results_df.columns:
+    #         plot_results(results_df['STOI'].to_frame(), title=f"{codec} - Mean STOI Scores", xlabel="Bitrate (kbps)", ylabel="STOI Score")
+    #     if any(col in results_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
+    #         df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]  # Select only the columns that are present in results_df
+    #         plot_results(df, title=f"{codec} - Mean {', '.join(df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score (dB)")
+    #     normalise_and_plot_results(codec, results_df)
+
+    # Combine codecs into a single plot for comparison
+    combined_df = pd.concat(result_dfs.values(), keys=result_dfs.keys())
+    for metric_name in combined_df.columns:
+        metric_df = (
+            combined_df[[metric_name]]
+            .reset_index(names=["Codec", "Bitrate"])
+            .pivot(index="Bitrate", columns="Codec", values=metric_name)
+            .reindex(bitrates)
+        )
+
+        plot_results(metric_df, title=f"Comparison of Mean {metric_name} Scores across Codecs", xlabel="Bitrate (kbps)", ylabel=f"{metric_name} Score")
+
+    # TODO: Combined normalized plot across codecs for each metric
 
     print("Audio analysis completed.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Audio Analysis Script")
+    parser = argparse.ArgumentParser(description="Audio Analysis Script") 
     parser.add_argument("--format", type=str, required=True, help="Specify format to convert (e.g., wav, opus) <Required>")
     parser.add_argument("--metric", type=str, nargs="+", required=True, help="Specify metric to calculate (e.g., PESQ, STOI, SI-SDR, SI-SNR) <Required>")
     parser.add_argument("--bitrate", type=int, nargs="+", default=[16], help="Specify bitrate (e.g., 16) <Optional>")
-    parser.add_argument("--codec", type=str, default="libopus", help="Method for encoding (e.g., libopus)")
+    parser.add_argument("--codec", type=str, nargs="+", default=["libopus"], help="Method for encoding (e.g., libopus)")
     parser.add_argument("--application", type=str, default="audio", help="Application type for encoding (e.g., voip, audio, lowdelay)")
     parser.add_argument("--samples", type=int, default=0, help="Specify number of samples to calculate PESQ for (e.g., 100) <Optional>")
     args = parser.parse_args()
