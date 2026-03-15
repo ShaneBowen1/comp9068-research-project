@@ -1,4 +1,3 @@
-# %%
 import argparse
 import os
 import time
@@ -18,6 +17,14 @@ from torchmetrics.audio import (
     SignalDistortionRatio,
     SignalNoiseRatio
 )
+
+custom_labels = {
+    'normalized_PESQ': 'PESQ',
+    'normalized_SI-SDR': 'SI-SDR',
+    'normalized_SI-SNR': 'SI-SNR',
+    'normalized_SDR': 'SDR',
+    'normalized_SNR': 'SNR'
+}
 
 class AudioLoader:
     @staticmethod
@@ -163,7 +170,6 @@ class AudioAnalyzer:
         """
         return {metric.name: metric.average_score() for metric in self.metrics}
 
-
 def plot_results(results_df, title, xlabel, ylabel, y_limit=None):
     """
     :param results_df: DataFrame of the form {bitrate: {metric_name: avg_score}}
@@ -172,12 +178,21 @@ def plot_results(results_df, title, xlabel, ylabel, y_limit=None):
     :param ylabel: Label for y-axis
     :param y_limit: Tuple specifying y-axis limits (optional)
     """
-    for metric_name in results_df.columns:
-        plt.plot(results_df.index, results_df[metric_name], marker='o', label=metric_name)
+
+    # Custom labels for the legend
+    results_df = results_df.rename(columns=custom_labels)
+
+    # Sort Bitrate column from highest to lowest for better visualization
+    results_df = results_df.sort_index(ascending=False)
+
+    for col in results_df.columns:
+        label = f"{col[0]} ({col[1]})" if isinstance(results_df.columns, pd.MultiIndex) else col
+        plt.plot(results_df.index, results_df[col], marker='o', label=label)
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.legend()
+    plt.tight_layout()
     plt.grid()
 
     # Set y-axis limits if specified
@@ -190,65 +205,60 @@ def plot_results(results_df, title, xlabel, ylabel, y_limit=None):
 
     # save figure
     plt.savefig(f'./results/plots/{title}_{int(time.time())}.png')
+    plt.show()
     plt.close()
 
-def normalise_and_plot_results(codec, results_df):
+def normalise_and_plot_results(results_df):
     """
-    :param codec: Codec name for display purposes
     :param results_df: DataFrame of the form {bitrate: {metric_name: avg_score}}
     """
 
-    if 'PESQ' in results_df.columns:
-        MIN = -0.5
-        MAX = 4.5
-        normalized_pesq = (results_df['PESQ'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
-        normalized_df = normalized_pesq.to_frame()  # Convert Series to DataFrame for plotting
-        plot_results(normalized_df, title=f"{codec} - Normalised PESQ Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
+    for codec, df in results_df.items():
+        print(f"\nNormalised results for codec: {codec}")
+        if 'PESQ' in df.columns:
+            MIN = -0.5
+            MAX = 4.5
+            normalized_pesq = (df['PESQ'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
+            normalized_df = normalized_pesq.to_frame()  # Convert Series to DataFrame for plotting
+            plot_results(normalized_df, title=f"{codec} - Normalised PESQ Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
 
-    if all(col in results_df.columns for col in ['PESQ', 'STOI']):
-        # Combine normalized PESQ and STOI into a single DataFrame for plotting
-        combined_normalized_df = pd.DataFrame({
-            'PESQ': normalized_pesq,
-            'STOI': results_df['STOI']  # STOI is already in the range [0, 1]
-        })
-        plot_results(combined_normalized_df, title=f"{codec} - Normalised PESQ and STOI Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
+        if all(col in df.columns for col in ['PESQ', 'STOI']):
+            # Combine normalized PESQ and STOI into a single DataFrame for plotting
+            combined_normalized_df = pd.DataFrame({
+                'PESQ': normalized_pesq,
+                'STOI': df['STOI']  # STOI is already in the range [0, 1]
+            })
+            plot_results(combined_normalized_df, title=f"{codec} - Normalised PESQ and STOI Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
 
-    if any(col in results_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
-        normalized_df = pd.DataFrame()
+        if any(col in df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
+            normalized_df = pd.DataFrame()
 
-        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]  # Select only the columns that are present in results_df
-        min_score = df.min().min()  # Get the minimum score across all metrics
-        max_score = df.max().max()  # Get the maximum score across all metrics
+            df = df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in df.columns]]  # Select only the columns that are present in results_df
+            min_score = df.min().min()  # Get the minimum score across all metrics
+            max_score = df.max().max()  # Get the maximum score across all metrics
 
-        for metric_name, series in df.items():
-            normalised_metric = (series - min_score) / (max_score - min_score)  # Normalize to [0, 1]
-            normalized_df[metric_name] = normalised_metric  # Add to DataFrame with metric name as column name
+            for metric_name, series in df.items():
+                normalised_metric = (series - min_score) / (max_score - min_score)  # Normalize to [0, 1]
+                normalized_df[metric_name] = normalised_metric  # Add to DataFrame with metric name as column name
+            plot_results(normalized_df, title=f"{codec} - Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
 
-        df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]
-        plot_results(normalized_df, title=f"{codec} - Normalised {', '.join(normalized_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
-
-def main(format, metric, bitrates=["16k"], codecs=["libopus"], application="audio", samples=0):
+def run_avg_score_calculation(format, metric, bitrates=["16k"], codecs=["libopus"], application="audio", samples=0):
     """
     :param format: Format of the degraded audio files (e.g., 'opus')
+    :param metric: List of metric names to calculate (e.g., ['PESQ', 'STOI'])
     :param bitrates: List of bitrates of the degraded audio files (e.g., ['16k', '32k'])
     :param codecs: List of codecs for encoding (e.g., ['libopus'])
     :param application: Application type for encoding (e.g., 'voip', 'audio', 'lowdelay')
     :param samples: Number of samples to process for each metric (0 for all samples)
-    :param metric: List of metric names to calculate (e.g., ['PESQ', 'STOI'])
+    :return results_dfs: Dictionary of DataFrames containing average scores for each codec and bitrate
     """
 
-    print("Starting audio analysis...")
-
-    # check if directory exists
-    if not os.path.exists('./results/data'):
-        os.makedirs('./results/data')
-
     input_folder = "./data_source/clean/wavs/"
-    result_dfs = {}  # Dict to store DataFrames for each codec
+    results_dfs = {}  # Dict to store average scores for each bitrate and metric
     results = defaultdict(dict)
 
     for codec in codecs:
-        print(f"Analyzing results for codec: {codec}")
+        print(f"Calculating average scores for codec: {codec}")
         for bitrate in bitrates:
             degraded_folder = f"./data_source/{codec}/{application}/{bitrate}/"
             metrics = MetricFactory.create_metrics(metric)
@@ -265,43 +275,100 @@ def main(format, metric, bitrates=["16k"], codecs=["libopus"], application="audi
         results_df = pd.DataFrame(results)
 
         # Store in dfs
-        result_dfs[codec] = results_df
+        results_dfs[codec] = results_df
 
-        # save the df so can easily load it later for plotting without needing to recalculate metrics
-        results_df.to_csv(f'./results/data/{codec}_metric_results_{int(time.time())}.csv', index_label="Bitrate")
-    
-    # # Plotting per codec results
-    # for codec, df in result_dfs.items():
+    return results_dfs
 
-    #     print(f"\nFinal results for codec: {codec}")
+def plots_per_codec(results_dfs):
+    """
+    :param results_dfs: Dictionary of DataFrames containing average scores for each codec and bitrate
+    """
+    for codec, df in results_dfs.items():
 
-    #     # Plot results on a single graph
-    #     plot_results(results_df, title=f"{codec} - Mean {', '.join(results_df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score")
+        # Plot All metrics on a single graph
+        plot_results(df, title=f"{codec} - Mean {', '.join(df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score")
 
+        # Individual plots for each metric
+        if 'PESQ' in df.columns:
+            plot_results(df['PESQ'].to_frame(), title=f"{codec} - Mean PESQ Scores", xlabel="Bitrate (kbps)", ylabel="PESQ Score")
+        if 'STOI' in df.columns:
+            plot_results(df['STOI'].to_frame(), title=f"{codec} - Mean STOI Scores", xlabel="Bitrate (kbps)", ylabel="STOI Score")
+        if any(col in df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
+            df = df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in df.columns]]
+            plot_results(df, title=f"{codec} - Mean {', '.join(df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score (dB)")
 
-    #     # Individual plots for each metric
-    #     if 'PESQ' in results_df.columns:
-    #         plot_results(results_df['PESQ'].to_frame(), title=f"{codec} - Mean PESQ Scores", xlabel="Bitrate (kbps)", ylabel="PESQ Score")
-    #     if 'STOI' in results_df.columns:
-    #         plot_results(results_df['STOI'].to_frame(), title=f"{codec} - Mean STOI Scores", xlabel="Bitrate (kbps)", ylabel="STOI Score")
-    #     if any(col in results_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
-    #         df = results_df[[col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in results_df.columns]]  # Select only the columns that are present in results_df
-    #         plot_results(df, title=f"{codec} - Mean {', '.join(df.columns)} Scores", xlabel="Bitrate (kbps)", ylabel="Score (dB)")
-    #     normalise_and_plot_results(codec, results_df)
+def merge_results_df_and_plot(results_dfs):
+    """
+    :param results_dfs: Dictionary of DataFrames containing average scores for each codec and bitrate
+    """
 
-    # Combine codecs into a single plot for comparison
-    combined_df = pd.concat(result_dfs.values(), keys=result_dfs.keys())
-    for metric_name in combined_df.columns:
-        metric_df = (
-            combined_df[[metric_name]]
-            .reset_index(names=["Codec", "Bitrate"])
-            .pivot(index="Bitrate", columns="Codec", values=metric_name)
-            .reindex(bitrates)
-        )
+    # use plot_results to plot all codecs on the same graph for each metric    
+    merged_df = pd.concat(results_dfs.values(), keys=results_dfs.keys(), names=['Codec', 'Bitrate'])
+    merged_df.reset_index(inplace=True)
 
-        plot_results(metric_df, title=f"Comparison of Mean {metric_name} Scores across Codecs", xlabel="Bitrate (kbps)", ylabel=f"{metric_name} Score")
+    for metric_name in merged_df.columns[2:]:  # Skip 'Codec' and 'Bitrate' columns
+        
+        pivot_df = merged_df.pivot(index='Bitrate', columns='Codec', values=metric_name)
+        plot_results(pivot_df, title=f"Comparison of {metric_name} Scores Across Codecs", xlabel="Bitrate (kbps)", ylabel=f"{metric_name} Score")
 
-    # TODO: Combined normalized plot across codecs for each metric
+def normalise_and_merge_plot_results(results_dfs):
+    """
+    :param results_dfs: Dictionary of DataFrames containing average scores for each codec and bitrate
+    """
+    merged_df = pd.concat(results_dfs.values(), keys=results_dfs.keys(), names=['Codec', 'Bitrate'])
+    merged_df.reset_index(inplace=True)
+
+    if 'PESQ' in merged_df.columns:
+        MIN = -0.5
+        MAX = 4.5
+        merged_df['normalized_PESQ'] = (merged_df['PESQ'] - MIN) / (MAX - MIN)  # Normalize to [0, 1]
+        pesq_pivot_df = merged_df.pivot(index='Bitrate', columns='Codec', values='normalized_PESQ')
+        plot_results(pesq_pivot_df, title=f"Comparison of Normalised PESQ Scores Across Codecs", xlabel="Bitrate (kbps)", ylabel=f"Normalised PESQ Score", y_limit=(0, 1))
+
+    # only include STOI and PESQ if both are present in the merged_df
+    if all(col in merged_df.columns for col in ['PESQ', 'STOI']):
+        combined_pivot_df = merged_df.pivot(index='Bitrate', columns='Codec', values=['normalized_PESQ', 'STOI'])
+        plot_results(combined_pivot_df, title=f"Comparison of Normalised PESQ and STOI Scores Across Codecs", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
+
+    if any(col in merged_df.columns for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR']):
+        columns_to_normalize = [col for col in ['SI-SDR', 'SI-SNR', 'SDR', 'SNR'] if col in merged_df.columns]
+
+        df = merged_df[columns_to_normalize]  # Select only the columns that are present in results_df
+        min_score = df.min().min()  # Get the minimum score across all metrics
+        max_score = df.max().max()  # Get the maximum score across all metrics
+
+        for metric_name in columns_to_normalize:
+            merged_df[f'normalized_{metric_name}'] = (merged_df[metric_name] - min_score) / (max_score - min_score)  # Normalize to [0, 1]
+
+        normalized_pivot_df = merged_df.pivot(index='Bitrate', columns='Codec', values=[f'normalized_{col}' for col in columns_to_normalize])
+        plot_results(normalized_pivot_df, title=f"Comparison of Normalised {', '.join([f'{col}' for col in columns_to_normalize])} Scores Across Codecs", xlabel="Bitrate (kbps)", ylabel="Normalised Score", y_limit=(0, 1))
+
+def main(format, metric, bitrates=["16k"], codecs=["libopus"], application="audio", samples=0):
+    """
+    :param format: Format of the degraded audio files (e.g., 'opus')
+    :param bitrates: List of bitrates of the degraded audio files (e.g., ['16k', '32k'])
+    :param codecs: List of codecs for encoding (e.g., ['libopus'])
+    :param application: Application type for encoding (e.g., 'voip', 'audio', 'lowdelay')
+    :param samples: Number of samples to process for each metric (0 for all samples)
+    :param metric: List of metric names to calculate (e.g., ['PESQ', 'STOI'])
+    """
+
+    print("Starting audio analysis...")
+
+    # Calculate average scores for each metric and bitrate
+    results_dfs = run_avg_score_calculation(format, metric, bitrates, codecs, application, samples)
+
+    # Plotting per codec results
+    plots_per_codec(results_dfs)
+
+    # Normalize and plot results for each codec
+    normalise_and_plot_results(results_dfs)
+
+    # Merge codecs into a single DataFrame for comparison
+    merge_results_df_and_plot(results_dfs)
+
+    # Normalize merged codecs and plot comparison
+    normalise_and_merge_plot_results(results_dfs)
 
     print("Audio analysis completed.")
 
