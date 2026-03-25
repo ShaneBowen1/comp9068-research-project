@@ -22,6 +22,3 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy the application code
 COPY *.py .
-
-# Set the default command to run the script
-CMD ["python", "transcode_audio.py"]

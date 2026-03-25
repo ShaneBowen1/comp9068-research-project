@@ -36,3 +36,17 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         ```
         docker run --rm -it --name test --volume ./data_source:/app/data_source test python audio_analysis.py --format opus --metric PESQ
         ```
+    
+    - preprocess.py
+        - `--volume` Mount the */data_source* folder to read input files
+        - `--env-file` Set environment variable inside container *if storing on S3
+        ```
+        docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python preprocess.py
+        ```
+    
+    - train.py
+        - `--volume` Mount the */data_source* folder to read input files
+        - `--env-file` Set environment variable inside container *if storing on S3
+        ```
+        docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python train.py
+        ```
