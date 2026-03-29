@@ -1,0 +1,4 @@
+boto3==1.42.75
+python-dotenv==1.2.2
+sagemaker-core==2.7.0
+sagemaker-train==1.7.0
