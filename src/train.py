@@ -1,15 +1,9 @@
-
 import argparse
 import os
 import numpy as np
 from vae import VAE
 import tensorflow as tf
-
-# LEARNING_RATE = 0.0005
-# BATCH_SIZE = 32
-# EPOCHS =  10
-
-#PATH_TO_SPECTROGRAMS = "../data_source/lj_speech/libopus/audio/16k/spectrograms/"
+from s3_utils import S3Client
 
 def load_mnist():
     """
@@ -32,20 +26,17 @@ def load_lj_speech(spectrograms_path):
     Loads the spectrogram data from the specified path. The function reads the spectrogram files, processes them, and returns the data in a format suitable for training machine learning models.
     """
     x_train = []  # for evaluation, should split into train and test sets
+    file_paths = []
 
     for root, _, files in os.walk(spectrograms_path):
-        for file in files[:500]:
+        for file in files:
             file_path = os.path.join(root, file)
             spectrogram = np.load(file_path, allow_pickle=True)   # (n_bins, n_frames)
-            # add a channel dimension if it doesn't exist
-            if spectrogram.ndim == 2:
-                spectrogram = spectrogram[..., np.newaxis]  # (n_bins, n_frames, 1)
-            # reshape to (256, 512) using tf.image.resize
-            spectrogram = tf.image.resize(spectrogram, (256, 512)).numpy()
             x_train.append(spectrogram)
+            file_paths.append(file_path.replace("../", ""))
 
-    return np.array(x_train)      # Convert list to numpy array
-    return x_train[..., np.newaxis]  # (num_samples, n_bins, n_frames, 1)
+    x_train = np.array(x_train)      # Convert list to numpy array
+    return x_train[..., np.newaxis], file_paths  # (num_samples, n_bins, n_frames, 1)
 
 def train(x_train, learning_rate, batch_size, epochs):
     """
@@ -53,11 +44,11 @@ def train(x_train, learning_rate, batch_size, epochs):
     After training, the function returns the trained autoencoder model.
     """
     vae = VAE(
-        input_shape=(256, 512, 1),
+        input_shape=(256, 64, 1),
         conv_filters=(512, 256, 128, 64, 32),
         conv_kernels=(3, 3, 3, 3, 3),
         conv_strides=(2, 2, 2, 2, 2),
-        latent_space_dim=128,
+        latent_space_dim=128
     )
     # vae = VAE(
     #     input_shape=(28, 28, 1),
@@ -66,6 +57,14 @@ def train(x_train, learning_rate, batch_size, epochs):
     #     conv_strides=(1, 2, 2, 1),
     #     latent_space_dim=2,
     # )
+
+    if LOCAL_FALSE_S3_TRUE:
+        vae.s3_client = S3Client(
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID', None),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY', None),
+            region_name=os.getenv('AWS_REGION', 'eu-west-1')
+        )
+
     vae.summary()
     vae.compile(learning_rate)
     vae.train(x_train, batch_size=batch_size, epochs=epochs)
@@ -77,19 +76,20 @@ if __name__ == "__main__":
 
     # hyperparameters for training the VAE    
     parser.add_argument('--learning_rate', type=float, default=0.0005, help='Learning rate for training the VAE.')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training the VAE.')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs for training the VAE.')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training the VAE.')
+    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs for training the VAE.')
 
     # Use SageMaker default if not passed
-    parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR'))
-    parser.add_argument('--train_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN'))
+    parser.add_argument('--model_dir', type=str, default=f"output/{os.environ.get('TRAINING_JOB_NAME')}", help='Directory to save the trained model.')
+    parser.add_argument('--train_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN'), help='Directory containing the training data.')
 
     args = parser.parse_args()
 
-    x_train = load_lj_speech(args.train_dir)
-    # Load mnist data for testing
+    LOCAL_FALSE_S3_TRUE = True  # Set to True to use S3 for saving/loading model, False to use local filesystem
+
+    x_train, _ = load_lj_speech(args.train_dir)
     #x_train, _, _, _ = load_mnist()
 
     print(x_train.shape)
-    vae = train(x_train[:500], args.learning_rate, args.batch_size, args.epochs)
+    vae = train(x_train, args.learning_rate, args.batch_size, args.epochs)
     vae.save(args.model_dir)

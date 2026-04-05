@@ -1,3 +1,4 @@
+import argparse
 import os
 import boto3
 from dotenv import load_dotenv
@@ -5,12 +6,13 @@ from sagemaker.core import image_uris
 from sagemaker.core.helper.session_helper import Session
 from sagemaker.core.training.configs import (
     Compute,
+    CheckpointConfig,
     InputData,
     OutputDataConfig,
     SourceCode,
+    StoppingCondition,
 )
 from sagemaker.train import ModelTrainer
-
 load_dotenv()
 
 class AWSTrainingJob:
@@ -50,13 +52,16 @@ class AWSTrainingJob:
             sagemaker_session=self.sagemaker_session,
             role=os.getenv("SAGEMAKER_ROLE_ARN", None),
             training_image=self.tf_model_image_uri,
+            base_job_name="tensorflow-training-job",
             source_code=SourceCode(
                 source_dir="./src",
+                requirements="requirements.txt",
                 entry_script="train.py"
             ),
             compute=Compute(
                 instance_type=self.instance_type,
-                instance_count=instance_count
+                instance_count=instance_count,
+                enable_managed_spot_training=True,  # Enable spot instances to reduce costs
             ),
             output_data_config=OutputDataConfig(
                 s3_output_path=f"s3://{os.getenv('S3_BUCKET_NAME')}/output"
@@ -66,6 +71,17 @@ class AWSTrainingJob:
                 "batch_size": str(batch_size),
                 "learning_rate": str(learning_rate),
             },
+            checkpoint_config=CheckpointConfig(
+                s3_uri=f"s3://{os.getenv('S3_BUCKET_NAME')}/checkpoints",
+                local_path="/opt/ml/checkpoints"
+            ),
+            stopping_condition=StoppingCondition(
+                max_runtime_in_seconds=86400,   # 24 hours
+                max_wait_time_in_seconds=108000 # 30 hours
+            ),
+            environment={
+                "S3_BUCKET_NAME": os.getenv("S3_BUCKET_NAME")
+            }
         )
 
         # Define the input data configuration for training
@@ -82,19 +98,29 @@ class AWSTrainingJob:
             print(f"Error occurred while training: {e}")
 
 if __name__ == "__main__":
+    
+    parser = argparse.ArgumentParser(description="Run AWS training job.")
 
-    train_data_path = f"s3://{os.getenv('S3_BUCKET_NAME')}/data_source/lj_speech/libopus/audio/16k/spectrograms/"
+    parser.add_argument("--epochs", type=int, default=150, help="Number of epochs for training.")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training.")
+    parser.add_argument("--learning_rate", type=float, default=0.0005, help="Learning rate for training.")
+    parser.add_argument("--instance_count", type=int, default=1, help="Number of instances for training.")
+    parser.add_argument("--train_path_uri", type=str, required=True, help="S3 URI for training data.")
+    parser.add_argument("--is_gpu", action="store_true", default=False, help="Flag to indicate whether to use GPU instance.")
+    args = parser.parse_args()
+
+    instanct_type = "ml.g5.2xlarge" if args.is_gpu else "ml.m5.large"
 
     training_job = AWSTrainingJob(
         framework="tensorflow",
         version="2.19",
         py_version="py312",
-        instance_type="ml.m5.large"
+        instance_type=instanct_type
     )
     training_job.run_training_job(
-        epochs=10,
-        batch_size=8,
-        learning_rate=0.0005,
-        instance_count=1,
-        train_data_path=train_data_path
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        instance_count=args.instance_count,
+        train_data_path=args.train_path_uri
     )

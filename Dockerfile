@@ -12,8 +12,9 @@ RUN apt-get update && \
     opus-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
+# Copy requirements files
 COPY requirements.txt .
+COPY src/requirements.txt src/
 
 # Upgrade pip and install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -21,4 +22,4 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY *.py .
+COPY src/*.py src/

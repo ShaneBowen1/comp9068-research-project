@@ -12,8 +12,6 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
 
 3. Run scripts:
     - transcode_audio.py
-        - `--volume` Mount the */data_source* folder to read input files and save 
-        transcoded files
         - `--format` Specify audio format to transcode (e.g., mp3, opus) *Required
         - `--bitrate` Specify bitrate to transcode (e.g., 128) **Default=\[16\]
         - `--sample_rate` Specify sample rate to transcode (e.g., 22050) *Optional
@@ -22,11 +20,10 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         - `--application` Application type for encoding (e.g., voip, audio, lowdelay) **Default=audio
         - `--samples` Specify number of samples (e.g., 100) **Default=all
         ```
-        docker run --rm -it --name test --volume ./data_source:/app/data_source test python transcode_audio.py --format opus
+        docker run --rm -it --name test --volume ./data_source:/app/data_source test python src/transcode_audio.py --format opus
         ```
 
     - audio_analysis.py
-        - `--volume` Mount the */data_source* folder to read input files
         - `--format` Specify format to analyse (e.g., wav, opus) *Required
         - `--metric` Specify metric to calculate (e.g., PESQ, STOI) *Required
         - `--bitrate` Specify bitrate (e.g., 128) *Optional **Default=16
@@ -34,19 +31,36 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         - `--application` Application type for encoding (e.g., voip, audio, lowdelay) **Default=audio
         - `--samples` Specify number of samples (e.g., 100) **Default=all
         ```
-        docker run --rm -it --name test --volume ./data_source:/app/data_source test python audio_analysis.py --format opus --metric PESQ
+        docker run --rm -it --name test --volume ./data_source:/app/data_source test python src/audio_analysis.py --format opus --metric PESQ
         ```
     
     - preprocess.py
-        - `--volume` Mount the */data_source* folder to read input files
-        - `--env-file` Set environment variable inside container *if storing on S3
         ```
-        docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python preprocess.py
+        docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python src/preprocess.py
         ```
     
     - train.py
-        - `--volume` Mount the */data_source* folder to read input files
-        - `--env-file` Set environment variable inside container *if storing on S3
+        - `--epochs` Specify number of epochs for training (e.g., 100) *Optional **Default=150
+        - `--batch_size` Specify batch size for training  (e.g., 32) *Optional **Default=64
+        - `--learning_rate` Specify learning rate for training (e.g. 0.005) *Optional **Default=0.0005
+        - `--model_dir` Directory to save the trained model *Optional **Default=output/{TRAINING_JOB_NAME}
+        - `--train_dir` Directory containing the training data *Optional **Default={SM_CHANNEL_TRAIN}
         ```
-        docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python train.py
+        docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python src/train.py
         ```
+
+    - aws_training_job.py
+        - `--epochs` Specify number of epochs for training (e.g., 100) *Optional **Default=150
+        - `--batch_size` Specify batch size for training  (e.g., 32) *Optional **Default=64
+        - `--learning_rate` Specify learning rate for training (e.g. 0.005) *Optional **Default=0.0005
+        - `--instance_count` Specify number of instance for training (e.g., 2) *Optional **Default=1
+        - `--train_path_uri` S3 URI path for training data **Required
+        - `--is_gpu` Flag to indicate whether to use GPU instance *Optional **Default=False
+        ```
+        python src/aws_training_job.py --train_path_uri s3://comp9068-research-project-bucket/data_source/lj_speech/libopus/audio/4k/spectrograms/ --is_gpu 
+        ```
+
+    - generate.py
+    ```
+    docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python src/generate.py
+    ```

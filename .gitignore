@@ -210,3 +210,6 @@ data_source/
 results/
 notebooks/
 tuts/
+*.wav
+*.pkl
+*.h5

@@ -63,6 +63,7 @@ class VAE:
         :param conv_kernels: A list of integers specifying the kernel size for each convolutional layer in the encoder.
         :param conv_strides: A list of integers specifying the stride for each convolutional layer in the encoder.
         :param latent_space_dim: An integer representing the dimensionality of the latent space (the compressed representation).
+        :param local_false_s3_true: A boolean indicating whether to save the model locally (False) or to an S3 bucket (True).
         """
 
         self.input_shape = input_shape    # (28, 28, 1)
@@ -70,7 +71,8 @@ class VAE:
         self.conv_kernels = conv_kernels  # [3, 5, 3]
         self.conv_strides = conv_strides  # [1, 2, 2]
         self.latent_space_dim = latent_space_dim  # 2
-        self.reconstruction_loss_weight = 1000000  # Weight for the reconstruction loss in the combined loss function
+        self.reconstruction_loss_weight = 1_000_000  # Weight for the reconstruction loss in the combined loss function
+        self.s3_client = None
 
         self.encoder = None
         self.decoder = None
@@ -107,9 +109,12 @@ class VAE:
         the input data through the encoder and decoder, calculating the loss, and updating the model weights using backpropagation. The batch_size parameter determines how many
         samples are processed before the model weights are updated, and the epochs parameter specifies how many times the entire training dataset is passed through the model.
         """
-        self.model.fit(x_train, x_train,  # For autoencoders, the target output is the same as the input
-                       batch_size=batch_size,
-                       epochs=epochs)
+        self.model.fit(
+            x_train,
+            x_train,  # For autoencoders, the target output is the same as the input
+            batch_size=batch_size,
+            epochs=epochs,
+        )
 
     def save(self, folder_path="."):
         """
@@ -168,15 +173,34 @@ class VAE:
             self.conv_strides,
             self.latent_space_dim
         ]
-        with open(os.path.join(folder_path, 'parameters.pkl'), 'wb') as f:
-            pickle.dump(parameters, f)
+        if self.s3_client:
+            print(f"Saving parameters to S3 bucket: {os.getenv('S3_BUCKET_NAME')}, folder path: {folder_path}")
+            self.s3_client.save_object(
+                data=parameters,
+                bucket_name=os.getenv('S3_BUCKET_NAME'),
+                object_name=os.path.join(folder_path, 'parameters.pkl')
+            )
+        else:
+            with open(os.path.join(folder_path, 'parameters.pkl'), 'wb') as f:
+                pickle.dump(parameters, f)
 
     def _save_weights(self, folder_path):
         """
         Saves the weights of the vae model to a file. The weights represent the learned parameters of the model after training and are essential for making predictions or reconstructing data using the vae.
         The weights can be saved in a format such as HDF5 (.h5) or TensorFlow SavedModel format, depending on your preference and requirements.
         """
-        self.model.save_weights(os.path.join(folder_path, 'model.weights.h5'))
+
+        file_path = os.path.join(folder_path, 'model.weights.h5')
+        self.model.save_weights(file_path)
+
+        if self.s3_client:
+            print(f"Saving model weights to S3 bucket: {os.getenv('S3_BUCKET_NAME')}, folder path: {folder_path}")
+            self.s3_client.upload_file(
+                file_path=file_path,
+                bucket_name=os.getenv('S3_BUCKET_NAME'),
+                object_name=os.path.join(folder_path, 'model.weights.h5')
+            )
+            
 
     def _build(self):
         """
