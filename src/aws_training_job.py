@@ -11,6 +11,7 @@ from sagemaker.core.training.configs import (
     OutputDataConfig,
     SourceCode,
     StoppingCondition,
+    TensorBoardOutputConfig
 )
 from sagemaker.train import ModelTrainer
 load_dotenv()
@@ -48,41 +49,42 @@ class AWSTrainingJob:
 
     def run_training_job(self, epochs, batch_size, learning_rate, instance_count, train_data_path):
         # Configure the SageMaker training job
-        trainer = ModelTrainer(
-            sagemaker_session=self.sagemaker_session,
-            role=os.getenv("SAGEMAKER_ROLE_ARN", None),
-            training_image=self.tf_model_image_uri,
-            base_job_name="tensorflow-training-job",
-            source_code=SourceCode(
-                source_dir="./src",
-                requirements="requirements.txt",
-                entry_script="train.py"
-            ),
-            compute=Compute(
-                instance_type=self.instance_type,
-                instance_count=instance_count,
-                enable_managed_spot_training=True,  # Enable spot instances to reduce costs
-            ),
-            output_data_config=OutputDataConfig(
-                s3_output_path=f"s3://{os.getenv('S3_BUCKET_NAME')}/output"
-            ),
-            hyperparameters={
-                "epochs": str(epochs),
-                "batch_size": str(batch_size),
-                "learning_rate": str(learning_rate),
-            },
-            checkpoint_config=CheckpointConfig(
-                s3_uri=f"s3://{os.getenv('S3_BUCKET_NAME')}/checkpoints",
-                local_path="/opt/ml/checkpoints"
-            ),
-            stopping_condition=StoppingCondition(
-                max_runtime_in_seconds=86400,   # 24 hours
-                max_wait_time_in_seconds=108000 # 30 hours
-            ),
-            environment={
-                "S3_BUCKET_NAME": os.getenv("S3_BUCKET_NAME")
-            }
-        )
+
+        trainer = (
+            ModelTrainer(
+                sagemaker_session=self.sagemaker_session,
+                role=os.getenv("SAGEMAKER_ROLE_ARN", None),
+                training_image=self.tf_model_image_uri,
+                base_job_name="tensorflow-training-job",
+                source_code=SourceCode(
+                    source_dir="./src",
+                    requirements="requirements.txt",
+                    entry_script="train.py"
+                ),
+                compute=Compute(
+                    instance_type=self.instance_type,
+                    instance_count=instance_count,
+                    enable_managed_spot_training=True,  # Enable spot instances to reduce costs
+                ),
+                output_data_config=OutputDataConfig(
+                    s3_output_path=f"s3://{os.getenv('S3_BUCKET_NAME')}/output"
+                ),
+                hyperparameters={
+                    "epochs": str(epochs),
+                    "batch_size": str(batch_size),
+                    "learning_rate": str(learning_rate),
+                },
+                checkpoint_config=CheckpointConfig(),
+                stopping_condition=StoppingCondition(
+                    max_runtime_in_seconds=86400,   # 24 hours
+                    max_wait_time_in_seconds=108000 # 30 hours
+                ),
+                environment={
+                    "S3_BUCKET_NAME": os.getenv("S3_BUCKET_NAME")
+                }
+            )
+            .with_tensorboard_output_config(TensorBoardOutputConfig())   # Enable TensorBoard output for monitoring training progress
+        )   
 
         # Define the input data configuration for training
         train_channel = InputData(

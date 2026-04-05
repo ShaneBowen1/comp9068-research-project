@@ -14,5 +14,6 @@ scikit-learn==1.8.0
 scipy==1.17.0
 seaborn==0.13.2
 soundfile==0.13.1
+tensorboard==2.20.0
 tensorflow_cpu==2.21.0
 torchmetrics==1.8.2

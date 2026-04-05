@@ -11,6 +11,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import Input, Conv2D, Flatten, Dense, Reshape, Conv2DTranspose, BatchNormalization, Lambda, Layer
 from tensorflow.keras.metrics import Mean
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
 
 class CombinedLoss(Layer):
     """
@@ -109,11 +110,31 @@ class VAE:
         the input data through the encoder and decoder, calculating the loss, and updating the model weights using backpropagation. The batch_size parameter determines how many
         samples are processed before the model weights are updated, and the epochs parameter specifies how many times the entire training dataset is passed through the model.
         """
+
+        checkpoint_cb = ModelCheckpoint(
+            "/opt/ml/checkpoints/checkpoint-{epoch}.weights.h5",
+            save_weights_only=True,
+            save_best_only=True,
+            monitor="kl_loss",
+            mode="min"
+        )
+        early_stopping_cb = EarlyStopping(
+            monitor="kl_loss",
+            mode="min",
+            patience=10,
+            restore_best_weights=True
+        )
+        tensorboard_cb = TensorBoard(
+            log_dir="/opt/ml/output/tensorboard",
+            histogram_freq=1
+        )
+
         self.model.fit(
             x_train,
             x_train,  # For autoencoders, the target output is the same as the input
             batch_size=batch_size,
             epochs=epochs,
+            callbacks=[checkpoint_cb, early_stopping_cb, tensorboard_cb]
         )
 
     def save(self, folder_path="."):
