@@ -5,6 +5,16 @@ from vae import VAE
 import tensorflow as tf
 from s3_utils import S3Client
 
+def make_same_amount(x, y):
+    """
+    This function takes two arrays as input and returns two arrays with the same number of samples.
+    """
+    min_len = min(len(x), len(y))
+    x = x[:min_len]
+    y = y[:min_len]
+
+    return x, y
+
 def load_mnist():
     """
     Loads the MNIST dataset, which consists of 28x28 grayscale images of handwritten digits (0-9). The dataset is commonly used for training and testing machine learning models in the field of computer vision.
@@ -26,19 +36,19 @@ def load_lj_speech(spectrograms_path):
     Loads the spectrogram data from the specified path. The function reads the spectrogram files, processes them, and returns the data in a format suitable for training machine learning models.
     """
     x_train = []  # for evaluation, should split into train and test sets
-    file_paths = []
+    file_paths = []  # for storing the file paths of the spectrograms
 
     for root, _, files in os.walk(spectrograms_path):
         for file in files:
             file_path = os.path.join(root, file)
             spectrogram = np.load(file_path, allow_pickle=True)   # (n_bins, n_frames)
             x_train.append(spectrogram)
-            file_paths.append(file_path.replace("../", ""))
+            file_paths.append(file_path.replace("../", ""))  # Store relative path for later use in S3Client
 
     x_train = np.array(x_train)      # Convert list to numpy array
     return x_train[..., np.newaxis], file_paths  # (num_samples, n_bins, n_frames, 1)
 
-def train(x_train, learning_rate, batch_size, epochs):
+def train(x_noisy, x_clean, learning_rate, batch_size, epochs):
     """
     Trains the autoencoder model using the provided training data and hyperparameters. The function initializes an instance of the AutoEncoder class, compiles the model with the specified learning rate, and then fits the model to the training data for a given number of epochs and batch size.
     After training, the function returns the trained autoencoder model.
@@ -67,7 +77,7 @@ def train(x_train, learning_rate, batch_size, epochs):
 
     vae.summary()
     vae.compile(learning_rate)
-    vae.train(x_train, batch_size=batch_size, epochs=epochs)
+    vae.train(x_noisy, x_clean, batch_size=batch_size, epochs=epochs)
     return vae
 
 if __name__ == "__main__":
@@ -81,15 +91,20 @@ if __name__ == "__main__":
 
     # Use SageMaker default if not passed
     parser.add_argument('--model_dir', type=str, default=f"output/{os.environ.get('TRAINING_JOB_NAME')}", help='Directory to save the trained model.')
-    parser.add_argument('--train_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN'), help='Directory containing the training data.')
+    parser.add_argument('--noisy_dir', type=str, default=os.environ.get('SM_CHANNEL_NOISY'), help='Directory containing the noisy training data.')
+    parser.add_argument('--clean_dir', type=str, default=os.environ.get('SM_CHANNEL_CLEAN'), help='Directory contain the clean training data.')
 
     args = parser.parse_args()
 
     LOCAL_FALSE_S3_TRUE = True  # Set to True to use S3 for saving/loading model, False to use local filesystem
 
-    x_train, _ = load_lj_speech(args.train_dir)
+    x_noisy, _ = load_lj_speech(args.noisy_dir)
+    x_clean, _ = load_lj_speech(args.clean_dir)
+    x_noisy, x_clean = make_same_amount(x_noisy, x_clean)
+    
     #x_train, _, _, _ = load_mnist()
+    print(x_noisy.shape)
+    print(x_clean.shape)
 
-    print(x_train.shape)
-    vae = train(x_train, args.learning_rate, args.batch_size, args.epochs)
+    vae = train(x_noisy, x_clean, args.learning_rate, args.batch_size, args.epochs)
     vae.save(args.model_dir)

@@ -18,12 +18,19 @@ def select_spectrograms(spectrograms, file_paths, min_max_values, num_samples):
     selected_min_max_values = [min_max_values[file_paths[i]] for i in sampled_indices]
     print(selected_file_paths)
     print(selected_min_max_values)
-    return selected_spectrograms, selected_min_max_values
+    return selected_spectrograms, selected_min_max_values, selected_file_paths
 
-def save_signal(signals, save_dir, sample_rate=22050):
+def save_signal(signals, save_dir, file_paths, sample_rate=22050):
     """Saves the generated audio signals to disk."""
-    for i, signal in enumerate(signals):
-        save_path = os.path.join(save_dir, f"generated_{i}.wav")
+
+    # Create the save directory if it doesn't exist
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    #for i, signal in enumerate(signals):
+    for signal, file_path in zip(signals, file_paths):
+        file_name = os.path.splitext(os.path.basename(file_path))[0]
+        save_path = os.path.join(save_dir, f"{file_name}.wav")
         sf.write(save_path, signal, sample_rate)
         print(f"Saved generated audio to: {save_path}")
 
@@ -32,7 +39,7 @@ if __name__ == "__main__":
     HOP_LENGTH = 256
     SAVE_DIR_ORIGINAL = "samples/original/"
     SAVE_DIR_GENERATED = "samples/generated/"
-    SAVED_MODEL_PATH = "output/tensorflow-training-job-20260403183117/"
+    SAVED_MODEL_PATH = "output/tensorflow-training-job-20260408161657/"
     TRAIN_DATA_PATH = "data_source/lj_speech/libopus/audio/4k/"
 
     # Instantiate the S3 client
@@ -75,7 +82,7 @@ if __name__ == "__main__":
         min_max_values = pickle.load(f)
 
     # Sample spectrograms + min max values
-    sampled_specs, sampled_min_max_values = select_spectrograms(
+    sampled_specs, sampled_min_max_values, sampled_file_paths = select_spectrograms(
         specs,
         file_paths,
         min_max_values,
@@ -95,5 +102,5 @@ if __name__ == "__main__":
     )
 
     # Save audio signals
-    save_signal(signals, SAVE_DIR_GENERATED)
-    save_signal(original_signals, SAVE_DIR_ORIGINAL)
+    save_signal(signals, SAVE_DIR_GENERATED, sampled_file_paths)
+    save_signal(original_signals, SAVE_DIR_ORIGINAL, sampled_file_paths)

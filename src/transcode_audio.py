@@ -13,7 +13,7 @@ def main(output_kwargs, bitrates, samples=0):
     print("Starting audio transcoding...")
 
     # 1. Read input files
-    input_folder = "./data_source/clean/wavs/"
+    input_folder = "../data_source/lj_speech/clean/wavs/"
 
     for bitrate in bitrates:
         output_kwargs["audio_bitrate"] = bitrate
@@ -23,7 +23,7 @@ def main(output_kwargs, bitrates, samples=0):
             if filename.endswith(".wav"):
                 input_file = os.path.join(input_folder, filename)
 
-                output_folder = f"./data_source/{args.codec}/{args.application}/{bitrate}/wavs/"
+                output_folder = f"../data_source/lj_speech/{args.codec}/{args.application}/{bitrate}/wavs/"
                 if not os.path.exists(output_folder):
                     os.makedirs(output_folder)
                 f_name = os.path.splitext(filename)[0]

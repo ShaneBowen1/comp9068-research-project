@@ -200,11 +200,11 @@ def plot_results(results_df, title, xlabel, ylabel, y_limit=None):
         plt.ylim(y_limit)
 
     # check if results directory exists, if not create it
-    if not os.path.exists('./results/plots'):
-        os.makedirs('./results/plots')
+    if not os.path.exists('../results/plots'):
+        os.makedirs('../results/plots')
 
     # save figure
-    plt.savefig(f'./results/plots/{title}_{int(time.time())}.png')
+    plt.savefig(f'../results/plots/{title}_{int(time.time())}.png')
     plt.show()
     plt.close()
 
@@ -253,14 +253,14 @@ def run_avg_score_calculation(format, metric, bitrates=["16k"], codecs=["libopus
     :return results_dfs: Dictionary of DataFrames containing average scores for each codec and bitrate
     """
 
-    input_folder = "./data_source/lj_speech/clean/wavs/"
+    input_folder = "../data_source/lj_speech/clean/wavs/"
     results_dfs = {}  # Dict to store average scores for each bitrate and metric
     results = defaultdict(dict)
 
     for codec in codecs:
         print(f"Calculating average scores for codec: {codec}")
         for bitrate in bitrates:
-            degraded_folder = f"./data_source/lj_speech/{codec}/{application}/{bitrate}/"
+            degraded_folder = f"../data_source/lj_speech/{codec}/{application}/{bitrate}/"
             metrics = MetricFactory.create_metrics(metric)
             analyzer = AudioAnalyzer(input_folder, degraded_folder, metrics)
             analyzer.analyze(format, samples)

@@ -16,7 +16,7 @@ from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoa
 class CombinedLoss(Layer):
     """
     Custom layer that adds VAE loss and metrics from model internals
-    Receives [inputs, reconstructed, mu, log_var] and returns reconstructed;
+    Receives [reconstruction_target, reconstructed, mu, log_var] and returns reconstructed;
     adds total loss and updates reconstruction_loss / kl_loss metrics
     """
     def __init__(self, reconstruction_loss_weight=1000, **kwargs):
@@ -26,9 +26,9 @@ class CombinedLoss(Layer):
         self.kl_loss_metric = Mean(name="kl_loss")
     
     def call(self, inputs, **kwargs):
-        x, reconstructed, mu, log_var = inputs
+        reconstruction_target, reconstructed, mu, log_var = inputs
         # Per-sample reconstruction loss (MSE over H, W, C)
-        recon_per_sample = tf.reduce_mean(tf.square(x - reconstructed), axis=[1, 2, 3])
+        recon_per_sample = tf.reduce_mean(tf.square(reconstruction_target - reconstructed), axis=[1, 2, 3])
         # Per-sample KL
         kl_per_sample = -0.5 * tf.reduce_sum(1 + log_var - tf.square(mu) - tf.exp(log_var), axis=1)
         recon_loss = tf.reduce_mean(recon_per_sample)
@@ -83,6 +83,7 @@ class VAE:
         self._num_conv_layers = len(conv_filters)
         self._shape_before_bottleneck = None
         self._model_input = None
+        self._reconstruction_target = None
 
         self._build()
 
@@ -104,9 +105,9 @@ class VAE:
             optimizer=Adam(learning_rate=learning_rate)
         )
 
-    def train(self, x_train, batch_size=32, epochs=50):
+    def train(self, x_noisy, x_clean, batch_size=32, epochs=50):
         """
-        Trains the VAE model on the provided training data (x_train). This method uses the fit function of the Keras model to perform the training process, which involves feeding
+        Trains the VAE model on the provided training data (x_noisy and x_clean). This method uses the fit function of the Keras model to perform the training process, which involves feeding
         the input data through the encoder and decoder, calculating the loss, and updating the model weights using backpropagation. The batch_size parameter determines how many
         samples are processed before the model weights are updated, and the epochs parameter specifies how many times the entire training dataset is passed through the model.
         """
@@ -119,9 +120,10 @@ class VAE:
             mode="min"
         )
         early_stopping_cb = EarlyStopping(
-            monitor="kl_loss",
+            monitor="loss",
             mode="min",
             patience=10,
+            start_from_epoch=5,
             restore_best_weights=True
         )
         tensorboard_cb = TensorBoard(
@@ -130,8 +132,8 @@ class VAE:
         )
 
         self.model.fit(
-            x_train,
-            x_train,  # For autoencoders, the target output is the same as the input
+            [x_noisy, x_clean],
+            None,
             batch_size=batch_size,
             epochs=epochs,
             callbacks=[checkpoint_cb, early_stopping_cb, tensorboard_cb]
@@ -238,12 +240,13 @@ class VAE:
         compressed representation in the latent space, and then passes this representation through the decoder to reconstruct the original data. CombinedLoss layer
         uses model internals (mu, log_var) for loss and metrics.
         """
+        self._reconstruction_target = Input(shape=self.input_shape, name='reconstruction_target')
         mu, log_var, z = self.encoder(self._model_input)
         reconstructed = self.decoder(z)
         model_output = CombinedLoss(reconstruction_loss_weight=self.reconstruction_loss_weight, name='combined_loss')(
-            [self._model_input, reconstructed, mu, log_var]
+            [self._reconstruction_target, reconstructed, mu, log_var]
         )
-        self.model = Model(self._model_input, model_output, name='vae')
+        self.model = Model([self._model_input, self._reconstruction_target], model_output, name='vae')
 
     def _build_decoder(self):
         """

@@ -18,7 +18,7 @@ load_dotenv()
 
 class AWSTrainingJob:
     """
-    AWSTrainingJob is responsible for configuring and running a SageMaker training job. It initializes the SageMaker session, retrieves the appropriate TensorFlow image URI for training, and defines the training job configuration, including the compute resources, input data configuration, and hyperparameters. The class also includes error handling to manage exceptions that may occur during the training process.
+    AWSTrainingJob is responsible for configuring and running a SageMaker training job. It initializes the SageMaker session, retrieves the appropriate TensorFlow image URI for training, and defines the training job configuration.
     """
     def __init__(self, framework, version, py_version, instance_type):
         # Initialize S3 client and SageMaker session
@@ -47,7 +47,7 @@ class AWSTrainingJob:
         )
         print(f"TensorFlow model image URI: {self.tf_model_image_uri}")
 
-    def run_training_job(self, epochs, batch_size, learning_rate, instance_count, train_data_path):
+    def run_training_job(self, epochs, batch_size, learning_rate, instance_count, train_data_path, clean_data_path, base_job_name="tensorflow-training-job"):
         # Configure the SageMaker training job
 
         trainer = (
@@ -55,7 +55,7 @@ class AWSTrainingJob:
                 sagemaker_session=self.sagemaker_session,
                 role=os.getenv("SAGEMAKER_ROLE_ARN", None),
                 training_image=self.tf_model_image_uri,
-                base_job_name="tensorflow-training-job",
+                base_job_name=base_job_name,
                 source_code=SourceCode(
                     source_dir="./src",
                     requirements="requirements.txt",
@@ -84,17 +84,21 @@ class AWSTrainingJob:
                 }
             )
             .with_tensorboard_output_config(TensorBoardOutputConfig())   # Enable TensorBoard output for monitoring training progress
-        )   
+        )
 
         # Define the input data configuration for training
-        train_channel = InputData(
-            channel_name="train",
+        noisy_channel = InputData(
+            channel_name="noisy",
             data_source=train_data_path
+        )
+        clean_channel = InputData(
+            channel_name="clean",
+            data_source=clean_data_path
         )
 
         # Start the training job
         try:
-            trainer.train(input_data_config=[train_channel])
+            trainer.train(input_data_config=[noisy_channel, clean_channel])
             print("Training job completed successfully.")
         except Exception as e:
             print(f"Error occurred while training: {e}")
@@ -107,7 +111,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training.")
     parser.add_argument("--learning_rate", type=float, default=0.0005, help="Learning rate for training.")
     parser.add_argument("--instance_count", type=int, default=1, help="Number of instances for training.")
-    parser.add_argument("--train_path_uri", type=str, required=True, help="S3 URI for training data.")
+    parser.add_argument("--noisy_path_uri", type=str, required=True, help="S3 URI for noisy training data.")
+    parser.add_argument("--clean_path_uri", type=str, required=True, help="S3 URI for clean training data.")
     parser.add_argument("--is_gpu", action="store_true", default=False, help="Flag to indicate whether to use GPU instance.")
     args = parser.parse_args()
 
@@ -124,5 +129,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         instance_count=args.instance_count,
-        train_data_path=args.train_path_uri
+        train_data_path=args.noisy_path_uri,
+        clean_data_path=args.clean_path_uri,
+        base_job_name="tensorflow-training-job"
     )

@@ -35,6 +35,17 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         ```
     
     - preprocess.py
+
+        # Use SageMaker default if not passed
+        - `--frame_size` Frame size for STFT **Default=512
+        - `--hop_length` Hop length for STFT **Default=256
+        - `--duration` Duration of audio to load (in seconds) **Default=0.74
+        - `--sample_rate` Sample rate for loading audio **Default=22050
+        - `--mono` Whether to convert audio to mono **Default=True
+        - `--samples` Number of samples to preprocess **Default=all
+        - `--files_dir` Directory containing the audio files to preprocess *Required
+        - `--spectrogram_save_dir` Directory to save the spectrogram features *Required
+        - `--min_max_values_save_dir` Directory to save the min-max values for denormalisation *Required
         ```
         docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python src/preprocess.py
         ```
@@ -54,10 +65,11 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         - `--batch_size` Specify batch size for training  (e.g., 32) *Optional **Default=64
         - `--learning_rate` Specify learning rate for training (e.g. 0.005) *Optional **Default=0.0005
         - `--instance_count` Specify number of instance for training (e.g., 2) *Optional **Default=1
-        - `--train_path_uri` S3 URI path for training data **Required
+        - `--noisy_path_uri` S3 URI path for training data **Required
+        - `--clean_path_uri` S3 URI path for clean training data **Required
         - `--is_gpu` Flag to indicate whether to use GPU instance *Optional **Default=False
         ```
-        python src/aws_training_job.py --train_path_uri s3://comp9068-research-project-bucket/data_source/lj_speech/libopus/audio/4k/spectrograms/ --is_gpu 
+        python src/aws_training_job.py --noisy_path_uri s3://comp9068-research-project-bucket/data_source/lj_speech/libopus/audio/4k/spectrograms/ --clean_path_uri s3://comp9068-research-project-bucket/data_source/lj_speech/clean/spectrograms/ --is_gpu
         ```
 
     - generate.py

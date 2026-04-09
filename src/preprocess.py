@@ -1,3 +1,4 @@
+import argparse
 import pickle
 import os
 import librosa
@@ -136,9 +137,10 @@ class PreprocessingPipeline:
         self._loader = loader
         self._num_expected_samples = int(loader.sample_rate * loader.duration)
 
-    def process(self, audio_files_dir):
+    def process(self, audio_files_dir, samples=0):
         for root, _, files in os.walk(audio_files_dir):
-            for file in files[0:3000]:
+            files = files[:samples] if samples > 0 else files
+            for file in files:
                 file_path = os.path.join(root, file)
                 self._process_file(file_path)
                 print(f"Processed {file_path}")
@@ -168,25 +170,32 @@ class PreprocessingPipeline:
         }
 
 if __name__ == "__main__":
-    FRAME_SIZE = 512
-    HOP_LENGTH = 256
-    DURATION = 0.74
-    SAMPLE_RATE = 22050
-    MONO = True
 
-    SPECTROGRAM_SAVE_DIR = 'data_source/lj_speech/libopus/audio/4k/spectrograms/'
-    MIN_MAX_VALUES_SAVE_DIR = 'data_source/lj_speech/libopus/audio/4k/'
-    FILES_DIR = '../data_source/lj_speech/libopus/audio/4k/wavs/'
-    LOCAL_FALSE_S3_TRUE = True # Set to True to use S3 for saving features, False to use local filesystem
+    parser = argparse.ArgumentParser(description='Preprocess the LJ Speech dataset.')
+
+    parser.add_argument('--frame_size', type=int, default=512, help='Frame size for STFT.')
+    parser.add_argument('--hop_length', type=int, default=256, help='Hop length for STFT.')
+    parser.add_argument('--duration', type=float, default=0.74, help='Duration of audio to load (in seconds).')
+    parser.add_argument('--sample_rate', type=int, default=22050, help='Sample rate for loading audio.')
+    parser.add_argument('--mono', type=bool, default=True, help='Whether to convert audio to mono.')
+    parser.add_argument('--samples', type=int, default=0, help='Number of samples to preprocess (0 for all).')
+
+    # Use SageMaker default if not passed
+    parser.add_argument('--files_dir', type=str, required=True, help='Directory containing the audio files to preprocess.')
+    parser.add_argument('--spectrogram_save_dir', type=str, required=True, help='Directory to save the spectrogram features.')
+    parser.add_argument('--min_max_values_save_dir', type=str, required=True, help='Directory to save the min-max values for denormalisation.')
+
+    args = parser.parse_args()
+    LOCAL_FALSE_S3_TRUE = True  # Set to True to use S3 for saving features, False to use local filesystem
 
     # Instantiate all objects
-    loader = Loader(sample_rate=SAMPLE_RATE, duration=DURATION, mono=MONO)
+    loader = Loader(sample_rate=args.sample_rate, duration=args.duration, mono=args.mono)
     padder = Padder()
-    extractor = LogSpectrogramExtractor(frame_size=FRAME_SIZE, hop_length=HOP_LENGTH)
+    extractor = LogSpectrogramExtractor(frame_size=args.frame_size, hop_length=args.hop_length)
     normaliser = MinMaxNormaliser(0, 1)
     saver = Saver(
-        feature_save_dir=SPECTROGRAM_SAVE_DIR,
-        min_max_values_save_dir=MIN_MAX_VALUES_SAVE_DIR,
+        feature_save_dir=args.spectrogram_save_dir,
+        min_max_values_save_dir=args.min_max_values_save_dir,
         local_false_s3_true=LOCAL_FALSE_S3_TRUE
     )
 
@@ -206,4 +215,4 @@ if __name__ == "__main__":
     pipeline.saver = saver
 
     # Run the pipeline
-    pipeline.process(FILES_DIR)
+    pipeline.process(args.files_dir, samples=args.samples)
