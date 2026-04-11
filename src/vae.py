@@ -11,7 +11,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.layers import Input, Conv2D, Flatten, Dense, Reshape, Conv2DTranspose, BatchNormalization, Lambda, Layer
 from tensorflow.keras.metrics import Mean
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceLROnPlateau
 
 class CombinedLoss(Layer):
     """
@@ -55,7 +55,8 @@ class VAE:
                 conv_filters,
                 conv_kernels,
                 conv_strides,
-                latent_space_dim):
+                latent_space_dim,
+                reconstruction_loss_weight):
         """
         Initializes the VAE with the specified parameters.
 
@@ -64,7 +65,7 @@ class VAE:
         :param conv_kernels: A list of integers specifying the kernel size for each convolutional layer in the encoder.
         :param conv_strides: A list of integers specifying the stride for each convolutional layer in the encoder.
         :param latent_space_dim: An integer representing the dimensionality of the latent space (the compressed representation).
-        :param local_false_s3_true: A boolean indicating whether to save the model locally (False) or to an S3 bucket (True).
+        :param reconstruction_loss_weight: A float representing the weight for the reconstruction loss in the combined loss function.
         """
 
         self.input_shape = input_shape    # (28, 28, 1)
@@ -72,7 +73,7 @@ class VAE:
         self.conv_kernels = conv_kernels  # [3, 5, 3]
         self.conv_strides = conv_strides  # [1, 2, 2]
         self.latent_space_dim = latent_space_dim  # 2
-        self.reconstruction_loss_weight = 1_000_000  # Weight for the reconstruction loss in the combined loss function
+        self.reconstruction_loss_weight = reconstruction_loss_weight  # Weight for the reconstruction loss in the combined loss function
         self.s3_client = None
 
         self.encoder = None
@@ -105,38 +106,48 @@ class VAE:
             optimizer=Adam(learning_rate=learning_rate)
         )
 
-    def train(self, x_noisy, x_clean, batch_size=32, epochs=50):
+    def train(self, train_data, test_data, batch_size=32, epochs=50):
         """
         Trains the VAE model on the provided training data (x_noisy and x_clean). This method uses the fit function of the Keras model to perform the training process, which involves feeding
         the input data through the encoder and decoder, calculating the loss, and updating the model weights using backpropagation. The batch_size parameter determines how many
         samples are processed before the model weights are updated, and the epochs parameter specifies how many times the entire training dataset is passed through the model.
         """
 
-        checkpoint_cb = ModelCheckpoint(
-            "/opt/ml/checkpoints/checkpoint-{epoch}.weights.h5",
-            save_weights_only=True,
-            save_best_only=True,
-            monitor="kl_loss",
-            mode="min"
-        )
-        early_stopping_cb = EarlyStopping(
-            monitor="loss",
-            mode="min",
-            patience=10,
-            start_from_epoch=5,
-            restore_best_weights=True
-        )
-        tensorboard_cb = TensorBoard(
-            log_dir="/opt/ml/output/tensorboard",
-            histogram_freq=1
-        )
+        callbacks = [
+            ModelCheckpoint(
+                "/opt/ml/checkpoints/checkpoint-{epoch}.weights.h5",
+                save_weights_only=True,
+                save_best_only=True,
+                monitor="val_loss",
+                mode="min"
+            ),
+            EarlyStopping(
+                monitor="val_loss",
+                mode="min",
+                patience=10,
+                start_from_epoch=5,
+                restore_best_weights=True
+            ),
+            ReduceLROnPlateau(
+                monitor="val_loss",
+                factor=0.25,   
+                patience=2,
+                min_lr=1e-5,
+                verbose=1
+            ),
+            TensorBoard(
+                log_dir="/opt/ml/output/tensorboard",
+                histogram_freq=1
+            )
+        ]
 
         self.model.fit(
-            [x_noisy, x_clean],
+            [train_data[0], train_data[1]],
             None,
+            validation_data=([test_data[0], test_data[1]], None),
             batch_size=batch_size,
             epochs=epochs,
-            callbacks=[checkpoint_cb, early_stopping_cb, tensorboard_cb]
+            callbacks=callbacks
         )
 
     def save(self, folder_path="."):

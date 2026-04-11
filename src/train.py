@@ -4,6 +4,7 @@ import numpy as np
 from vae import VAE
 import tensorflow as tf
 from s3_utils import S3Client
+from sklearn.model_selection import train_test_split
 
 def make_same_amount(x, y):
     """
@@ -48,7 +49,32 @@ def load_lj_speech(spectrograms_path):
     x_train = np.array(x_train)      # Convert list to numpy array
     return x_train[..., np.newaxis], file_paths  # (num_samples, n_bins, n_frames, 1)
 
-def train(x_noisy, x_clean, learning_rate, batch_size, epochs):
+def prepare_dataset(data, test_size=0.2):
+    """
+    Prepares the dataset for training by splitting it into training and testing sets. The function takes the noisy and clean spectrogram data as input, along with a specified test size, and returns the training and testing data for both the noisy and clean spectrograms.
+    """
+    train_data, test_data = train_test_split(data, test_size=test_size, random_state=42)
+    print(f"Training samples: {len(train_data)}, Testing samples: {len(test_data)}")
+
+    # Unzip the data into separate arrays for noisy and clean spectrograms
+    x_train_noisy, x_train_clean = zip(*train_data)
+    x_test_noisy, x_test_clean = zip(*test_data)    
+
+    # Convert to numpy arrays
+    x_train = (
+        np.array(x_train_noisy),
+        np.array(x_train_clean)
+    )
+    x_test = (
+        np.array(x_test_noisy),
+        np.array(x_test_clean)
+    )
+    print("X Train Shapes:", x_train[0].shape, x_train[1].shape)
+    print("X Test Shapes:", x_test[0].shape, x_test[1].shape)
+
+    return x_train, x_test
+
+def train(x_train, x_test, learning_rate, batch_size, epochs, reconstruction_loss_weight):
     """
     Trains the autoencoder model using the provided training data and hyperparameters. The function initializes an instance of the AutoEncoder class, compiles the model with the specified learning rate, and then fits the model to the training data for a given number of epochs and batch size.
     After training, the function returns the trained autoencoder model.
@@ -58,7 +84,8 @@ def train(x_noisy, x_clean, learning_rate, batch_size, epochs):
         conv_filters=(512, 256, 128, 64, 32),
         conv_kernels=(3, 3, 3, 3, 3),
         conv_strides=(2, 2, 2, 2, 2),
-        latent_space_dim=128
+        latent_space_dim=128,
+        reconstruction_loss_weight=reconstruction_loss_weight
     )
     # vae = VAE(
     #     input_shape=(28, 28, 1),
@@ -66,6 +93,7 @@ def train(x_noisy, x_clean, learning_rate, batch_size, epochs):
     #     conv_kernels=(3, 3, 3, 3),
     #     conv_strides=(1, 2, 2, 1),
     #     latent_space_dim=2,
+    #     reconstruction_loss_weight=reconstruction_loss_weight
     # )
 
     if LOCAL_FALSE_S3_TRUE:
@@ -77,7 +105,7 @@ def train(x_noisy, x_clean, learning_rate, batch_size, epochs):
 
     vae.summary()
     vae.compile(learning_rate)
-    vae.train(x_noisy, x_clean, batch_size=batch_size, epochs=epochs)
+    vae.train(x_train, x_test, batch_size=batch_size, epochs=epochs)
     return vae
 
 if __name__ == "__main__":
@@ -88,6 +116,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=0.0005, help='Learning rate for training the VAE.')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training the VAE.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs for training the VAE.')
+    parser.add_argument('--reconstruction_loss_weight', type=float, default=1000.0, help='Weight for the reconstruction loss in the combined loss function.')
 
     # Use SageMaker default if not passed
     parser.add_argument('--model_dir', type=str, default=f"output/{os.environ.get('TRAINING_JOB_NAME')}", help='Directory to save the trained model.')
@@ -96,15 +125,17 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    LOCAL_FALSE_S3_TRUE = True  # Set to True to use S3 for saving/loading model, False to use local filesystem
+    LOCAL_FALSE_S3_TRUE = True  # Set to True to use S3 for saving/loading model, False to use lfs
 
     x_noisy, _ = load_lj_speech(args.noisy_dir)
     x_clean, _ = load_lj_speech(args.clean_dir)
     x_noisy, x_clean = make_same_amount(x_noisy, x_clean)
-    
-    #x_train, _, _, _ = load_mnist()
-    print(x_noisy.shape)
-    print(x_clean.shape)
+    x_train, x_test = prepare_dataset(list(zip(x_noisy, x_clean)))
+    vae = train(x_train, x_test, args.learning_rate, args.batch_size, args.epochs)
 
-    vae = train(x_noisy, x_clean, args.learning_rate, args.batch_size, args.epochs)
+    # x_train, _, x_test, _ = load_mnist()
+    # print(x_train.shape)
+    # print(x_test.shape)
+    # # vae = train((x_train, x_train), (x_test, x_test), args.learning_rate, args.batch_size, args.epochs, args.reconstruction_loss_weight)  # Using x_train as both noisy and clean for MNIST
+
     vae.save(args.model_dir)

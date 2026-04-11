@@ -35,8 +35,6 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         ```
     
     - preprocess.py
-
-        # Use SageMaker default if not passed
         - `--frame_size` Frame size for STFT **Default=512
         - `--hop_length` Hop length for STFT **Default=256
         - `--duration` Duration of audio to load (in seconds) **Default=0.74
@@ -54,8 +52,10 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         - `--epochs` Specify number of epochs for training (e.g., 100) *Optional **Default=150
         - `--batch_size` Specify batch size for training  (e.g., 32) *Optional **Default=64
         - `--learning_rate` Specify learning rate for training (e.g. 0.005) *Optional **Default=0.0005
+        - `--reconstruction_loss_weight` Weight for the reconstruction loss in the combined loss function *Optional **Default=1000.0
         - `--model_dir` Directory to save the trained model *Optional **Default=output/{TRAINING_JOB_NAME}
-        - `--train_dir` Directory containing the training data *Optional **Default={SM_CHANNEL_TRAIN}
+        - `--noisy_dir` Directory containing the noisy training data *Optional **Default={SM_CHANNEL_NOISY}
+        - `--clean_dir` Directory containing the clean training data *Optional **Default={SM_CHANNEL_CLEAN}
         ```
         docker run --rm -it --name test --volume ./data_source:/app/data_source --env-file .env test python src/train.py
         ```
@@ -64,6 +64,7 @@ A Generative AI Approach for Audio Restoration due to Compression for Speech Enh
         - `--epochs` Specify number of epochs for training (e.g., 100) *Optional **Default=150
         - `--batch_size` Specify batch size for training  (e.g., 32) *Optional **Default=64
         - `--learning_rate` Specify learning rate for training (e.g. 0.005) *Optional **Default=0.0005
+        - `--reconstruction_loss_weight` Weight for the reconstruction loss in the combined loss function *Optional **Default=1000.0
         - `--instance_count` Specify number of instance for training (e.g., 2) *Optional **Default=1
         - `--noisy_path_uri` S3 URI path for training data **Required
         - `--clean_path_uri` S3 URI path for clean training data **Required
