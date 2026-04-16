@@ -131,7 +131,7 @@ if __name__ == "__main__":
     x_clean, _ = load_lj_speech(args.clean_dir)
     x_noisy, x_clean = make_same_amount(x_noisy, x_clean)
     x_train, x_test = prepare_dataset(list(zip(x_noisy, x_clean)))
-    vae = train(x_train, x_test, args.learning_rate, args.batch_size, args.epochs)
+    vae = train(x_train, x_test, args.learning_rate, args.batch_size, args.epochs, args.reconstruction_loss_weight)
 
     # x_train, _, x_test, _ = load_mnist()
     # print(x_train.shape)
