@@ -74,25 +74,49 @@ def prepare_dataset(data, test_size=0.2):
 
     return x_train, x_test
 
-def train(x_train, x_test, learning_rate, batch_size, epochs, reconstruction_loss_weight):
+def train(
+        x_train,
+        x_test,
+        learning_rate,
+        batch_size,
+        epochs,
+        reconstruction_loss_weight,
+        latent_space_dim,
+        base_filters,
+        n_layers
+    ):
     """
     Trains the autoencoder model using the provided training data and hyperparameters. The function initializes an instance of the AutoEncoder class, compiles the model with the specified learning rate, and then fits the model to the training data for a given number of epochs and batch size.
     After training, the function returns the trained autoencoder model.
     """
+    
+    base_filters = args.base_filters
+    conv_filters = tuple(base_filters // (2 ** i) for i in range(n_layers))  # Example: (512, 256, 128, 64, 32) for n_layers=5
+    conv_kernels = tuple(3 for _ in range(n_layers))  # Example: (3, 3, 3, 3, 3) for n_layers=5
+    conv_strides = tuple(2 for _ in range(n_layers-1)) + (1,)  # Example: (2, 2, 2, 2, 1) for n_layers=5
+    
+    # vae = VAE(
+    #     input_shape=(256, 64, 1),
+    #     conv_filters=conv_filters,
+    #     conv_kernels=conv_kernels,
+    #     conv_strides=conv_strides,
+    #     latent_space_dim=latent_space_dim,
+    #     reconstruction_loss_weight=reconstruction_loss_weight
+    # )
     vae = VAE(
-        input_shape=(256, 64, 1),
-        conv_filters=(512, 256, 128, 64, 32),
-        conv_kernels=(3, 3, 3, 3, 3),
-        conv_strides=(2, 2, 2, 2, 2),
-        latent_space_dim=128,
+        input_shape=(80, 64, 1),
+        conv_filters=conv_filters,
+        conv_kernels=conv_kernels,
+        conv_strides=conv_strides,
+        latent_space_dim=latent_space_dim,
         reconstruction_loss_weight=reconstruction_loss_weight
     )
     # vae = VAE(
     #     input_shape=(28, 28, 1),
-    #     conv_filters=(32, 64, 64, 64),
-    #     conv_kernels=(3, 3, 3, 3),
-    #     conv_strides=(1, 2, 2, 1),
-    #     latent_space_dim=2,
+    #     conv_filters=conv_filters,
+    #     conv_kernels=conv_kernels,
+    #     conv_strides=conv_strides,
+    #     latent_space_dim=latent_space_dim,
     #     reconstruction_loss_weight=reconstruction_loss_weight
     # )
 
@@ -117,9 +141,18 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training the VAE.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs for training the VAE.')
     parser.add_argument('--reconstruction_loss_weight', type=float, default=1000.0, help='Weight for the reconstruction loss in the combined loss function.')
+    parser.add_argument('--latent_space_dim', type=int, default=128, help='Dimensionality of the latent space in the VAE.')
+    parser.add_argument('--base_filters', type=int, default=512, help='Number of filters in the first convolutional layer of the VAE.')
+    parser.add_argument('--n_layers', type=int, default=5, help='Number of convolutional layers in the VAE.')
 
     # Use SageMaker default if not passed
     parser.add_argument('--model_dir', type=str, default=f"output/{os.environ.get('TRAINING_JOB_NAME')}", help='Directory to save the trained model.')
+    # parser.add_argument(
+    #     '--model_dir',
+    #     type=str,
+    #     default=os.environ.get('SM_MODEL_DIR', f"output/{os.environ.get('TRAINING_JOB_NAME')}"),
+    #     help='Directory to save the trained model.'
+    # )
     parser.add_argument('--noisy_dir', type=str, default=os.environ.get('SM_CHANNEL_NOISY'), help='Directory containing the noisy training data.')
     parser.add_argument('--clean_dir', type=str, default=os.environ.get('SM_CHANNEL_CLEAN'), help='Directory contain the clean training data.')
 
@@ -131,11 +164,33 @@ if __name__ == "__main__":
     x_clean, _ = load_lj_speech(args.clean_dir)
     x_noisy, x_clean = make_same_amount(x_noisy, x_clean)
     x_train, x_test = prepare_dataset(list(zip(x_noisy, x_clean)))
-    vae = train(x_train, x_test, args.learning_rate, args.batch_size, args.epochs, args.reconstruction_loss_weight)
+    vae = train(
+        x_train,
+        x_test,
+        args.learning_rate,
+        args.batch_size,
+        args.epochs,
+        args.reconstruction_loss_weight,
+        args.latent_space_dim,
+        args.base_filters,
+        args.n_layers
+    )
 
     # x_train, _, x_test, _ = load_mnist()
+    # x_train = x_train[:10000]  # Use a subset of the training data for faster training
+    # x_test = x_test[:2000]     # Use a subset of the testing data for faster evaluation
     # print(x_train.shape)
     # print(x_test.shape)
-    # # vae = train((x_train, x_train), (x_test, x_test), args.learning_rate, args.batch_size, args.epochs, args.reconstruction_loss_weight)  # Using x_train as both noisy and clean for MNIST
+    # vae = train(
+    #     (x_train, x_train),
+    #     (x_test, x_test),
+    #     args.learning_rate,
+    #     args.batch_size,
+    #     args.epochs,
+    #     args.reconstruction_loss_weight,
+    #     args.latent_space_dim,
+    #     args.base_filters,
+    #     args.n_layers
+    # )  # Using x_train as both noisy and clean for MNIST
 
     vae.save(args.model_dir)

@@ -47,6 +47,48 @@ class LogSpectrogramExtractor:
         log_spectrogram = librosa.amplitude_to_db(np.abs(spectrogram))
         return log_spectrogram
 
+class MelSpectrogramExtractor:
+    """
+    Mel Spectrogram Extractor is responsible for extracting the Mel spectrogram from a time-series signal.
+    """
+    def __init__(self, sample_rate, n_mels, frame_size, hop_length):
+        self.sample_rate = sample_rate
+        self.n_mels = n_mels
+        self.frame_size = frame_size
+        self.hop_length = hop_length
+    
+    def extract(self, signal):
+        mel_spectrogram = librosa.feature.melspectrogram(
+            y=signal,
+            sr=self.sample_rate,
+            n_fft=self.frame_size,
+            hop_length=self.hop_length,
+            n_mels=self.n_mels
+        )
+        log_mel_spectrogram = librosa.power_to_db(mel_spectrogram)
+        return log_mel_spectrogram
+
+class MFCCExtractor:
+    """
+    MFCC Extractor is responsible for extracting the MFCC features from a time-series signal.
+    """
+    def __init__(self, sample_rate, n_mfcc, frame_size, hop_length):
+        self.sample_rate = sample_rate
+        self.n_mfcc = n_mfcc
+        self.n_mels = n_mfcc  # Set n_mels to n_mfcc to ensure we have enough Mel bands for MFCC extraction
+        self.frame_size = frame_size
+        self.hop_length = hop_length
+    
+    def extract(self, signal):
+        mfccs = librosa.feature.mfcc(
+            y=signal,
+            sr=self.sample_rate,
+            n_fft=self.frame_size,
+            hop_length=self.hop_length,
+            n_mfcc=self.n_mfcc,
+            n_mels=self.n_mels
+        )
+        return mfccs
 
 class MinMaxNormaliser:
     """
@@ -177,6 +219,9 @@ if __name__ == "__main__":
     parser.add_argument('--hop_length', type=int, default=256, help='Hop length for STFT.')
     parser.add_argument('--duration', type=float, default=0.74, help='Duration of audio to load (in seconds).')
     parser.add_argument('--sample_rate', type=int, default=22050, help='Sample rate for loading audio.')
+    parser.add_argument('--n_mels', type=int, default=256, help='Number of Mel bands to generate (only for MelSpectrogramExtractor).')
+    parser.add_argument('--n_mfcc', type=int, default=256, help='Number of MFCCs to generate (only for MFCCExtractor).')
+    parser.add_argument('--extractor_type', type=str, default='log', choices=['log', 'mel', 'mfcc'], help='Type of feature extractor to use.')
     parser.add_argument('--mono', type=bool, default=True, help='Whether to convert audio to mono.')
     parser.add_argument('--samples', type=int, default=0, help='Number of samples to preprocess (0 for all).')
 
@@ -188,10 +233,30 @@ if __name__ == "__main__":
     args = parser.parse_args()
     LOCAL_FALSE_S3_TRUE = True  # Set to True to use S3 for saving features, False to use local filesystem
 
+    args.spectrogram_save_dir = os.path.join(args.spectrogram_save_dir, args.extractor_type) + "/"
+    args.min_max_values_save_dir = os.path.join(args.min_max_values_save_dir, args.extractor_type) + "/"
+
     # Instantiate all objects
     loader = Loader(sample_rate=args.sample_rate, duration=args.duration, mono=args.mono)
     padder = Padder()
-    extractor = LogSpectrogramExtractor(frame_size=args.frame_size, hop_length=args.hop_length)
+    if args.extractor_type == 'log':
+        extractor = LogSpectrogramExtractor(
+            frame_size=args.frame_size,
+            hop_length=args.hop_length)
+    elif args.extractor_type == 'mel':
+        extractor = MelSpectrogramExtractor(
+            sample_rate=args.sample_rate,
+            frame_size=args.frame_size,
+            hop_length=args.hop_length,
+            n_mels=args.n_mels
+        )
+    elif args.extractor_type == 'mfcc':
+        extractor = MFCCExtractor(
+            sample_rate=args.sample_rate,
+            frame_size=args.frame_size,
+            hop_length=args.hop_length,
+            n_mfcc=args.n_mfcc
+        )
     normaliser = MinMaxNormaliser(0, 1)
     saver = Saver(
         feature_save_dir=args.spectrogram_save_dir,

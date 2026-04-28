@@ -1,7 +1,20 @@
 import argparse
+import json
 import os
 import ffmpeg
 
+def write_args_to_config(args, bitrate):
+    """
+    Writes the arguments to the config file for the given bitrate.
+    """
+    folder_path = (
+        f"../data_source/lj_speech/{args.codec}/{args.application}/{bitrate}/config/"
+    )
+    os.makedirs(folder_path, exist_ok=True)
+    with open(f"{folder_path}transcode_audio_args.json", "w", encoding="utf-8") as f:
+        config_payload = vars(args).copy()
+        config_payload["bitrate"] = bitrate
+        json.dump(config_payload, f, indent=4)
 
 def main(output_kwargs, bitrates, samples=0):
     """
@@ -50,6 +63,9 @@ def main(output_kwargs, bitrates, samples=0):
                     break
 
             #input("Press Enter to continue...")
+
+        # Write args to config file
+        write_args_to_config(args, bitrate)
 
         print(f"Completed transcoding for bitrate: {bitrate}, processed {idx} files.\n")
 

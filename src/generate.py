@@ -6,7 +6,6 @@ import soundfile as sf
 
 from soundgenerator import SoundGenerator
 from vae import VAE
-from train import load_lj_speech
 
 import s3_utils
 
@@ -24,8 +23,7 @@ def save_signal(signals, save_dir, file_paths, sample_rate=22050):
     """Saves the generated audio signals to disk."""
 
     # Create the save directory if it doesn't exist
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    os.makedirs(save_dir, exist_ok=True)
 
     #for i, signal in enumerate(signals):
     for signal, file_path in zip(signals, file_paths):
@@ -39,8 +37,12 @@ if __name__ == "__main__":
     HOP_LENGTH = 256
     SAVE_DIR_ORIGINAL = "samples/original/"
     SAVE_DIR_GENERATED = "samples/generated/"
-    SAVED_MODEL_PATH = "output/tensorflow-training-job-20260408161657/"
-    TRAIN_DATA_PATH = "data_source/lj_speech/libopus/audio/4k/"
+    SAVED_MODEL_PATH = "output/tensorflow-training-job-20260426194141"
+    TRAIN_DATA_PATH = "data_source/lj_speech/libopus/audio/16k/mel/"
+    NOISY_PATH_URI = "s3://comp9068-research-project-bucket/data_source/lj_speech/libopus/audio/16k/spectrograms/mel/"
+    CLEAN_PATH_URI = "s3://comp9068-research-project-bucket/data_source/lj_speech/clean/spectrograms/mel/"
+
+    os.makedirs("model", exist_ok=True)
 
     # Instantiate the S3 client
     s3_client = s3_utils.S3Client(
@@ -49,25 +51,27 @@ if __name__ == "__main__":
         region_name=os.getenv('AWS_REGION', 'eu-west-1')
     )
 
+    print(os.path.join(SAVED_MODEL_PATH, "model.weights.h5"))
+
     # Download the model weights from S3
     s3_client.download_file(
         bucket_name=os.getenv('S3_BUCKET_NAME'),
-        object_name=os.path.join(SAVED_MODEL_PATH, "model.weights.h5"),
+        object_name=os.path.join(SAVED_MODEL_PATH, "model.weights.h5").replace("\\", "/"),
         file_path="model/model.weights.h5"
     )
 
     # Download the model parameters from S3
     s3_client.download_file(
         bucket_name=os.getenv('S3_BUCKET_NAME'),
-        object_name=os.path.join(SAVED_MODEL_PATH, "parameters.pkl"),
+        object_name=os.path.join(SAVED_MODEL_PATH, "parameters.pkl").replace("\\", "/"),
         file_path="model/parameters.pkl"
     )
 
     # Download the min-max values from S3
     s3_client.download_file(
         bucket_name=os.getenv('S3_BUCKET_NAME'),
-        object_name=os.path.join(TRAIN_DATA_PATH, "min_max_values.pkl"),
-        file_path='min_max_values.pkl'
+        object_name=os.path.join(TRAIN_DATA_PATH, "min_max_values.pkl").replace("\\", "/"),
+        file_path='model/min_max_values.pkl'
     )
 
     # Load the saved model
@@ -77,9 +81,14 @@ if __name__ == "__main__":
     sound_generator = SoundGenerator(model, HOP_LENGTH)
 
     # Load the spectrograms + min max values
-    specs, file_paths = load_lj_speech(os.path.join("../", TRAIN_DATA_PATH, "spectrograms/"))
-    with open("min_max_values.pkl", "rb") as f:
+    #specs, file_paths = load_lj_speech(os.path.join("../", TRAIN_DATA_PATH, "spectrograms/"))
+    #specs, file_paths = load_lj_speech(NOISY_PATH_URI)
+    with open("model/min_max_values.pkl", "rb") as f:
         min_max_values = pickle.load(f)
+
+
+    # 1. Load spectrograms and file paths from S3
+    specs, file_paths = s3_client.load_spectrograms_from_s3(NOISY_PATH_URI, num_samples=10)
 
     # Sample spectrograms + min max values
     sampled_specs, sampled_min_max_values, sampled_file_paths = select_spectrograms(

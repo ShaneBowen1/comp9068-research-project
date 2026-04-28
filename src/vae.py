@@ -125,14 +125,15 @@ class VAE:
                 monitor="val_loss",
                 mode="min",
                 patience=10,
-                start_from_epoch=5,
+                start_from_epoch=2,
                 restore_best_weights=True
             ),
             ReduceLROnPlateau(
                 monitor="val_loss",
                 factor=0.25,   
-                patience=2,
-                min_lr=1e-5,
+                patience=5,
+                min_lr=1e-4,
+                mode="min",
                 verbose=1
             ),
             TensorBoard(
@@ -205,7 +206,8 @@ class VAE:
             self.conv_filters,
             self.conv_kernels,
             self.conv_strides,
-            self.latent_space_dim
+            self.latent_space_dim,
+            self.reconstruction_loss_weight
         ]
         if self.s3_client:
             print(f"Saving parameters to S3 bucket: {os.getenv('S3_BUCKET_NAME')}, folder path: {folder_path}")
@@ -404,6 +406,7 @@ if __name__ == "__main__":
     conv_kernels = [3, 3, 3, 3]
     conv_strides = [1, 2, 2, 1]
     latent_space_dim = 2
+    reconstruction_loss_weight = 1000
 
-    vae = VAE(input_shape, conv_filters, conv_kernels, conv_strides, latent_space_dim)
+    vae = VAE(input_shape, conv_filters, conv_kernels, conv_strides, latent_space_dim, reconstruction_loss_weight)
     vae.summary()
