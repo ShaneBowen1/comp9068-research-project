@@ -144,7 +144,7 @@ class AWSTrainingJob:
             print(f"Error occurred while training: {e}")
             return None, None
 
-    def deploy_model(self, job_name, endpoint_instance_type, initial_instance_count, endpoint_name=None):
+    def deploy_model(self, job_name, endpoint_instance_type, initial_instance_count):
         """
         Deploy the artifact from the last completed ``training_job``.
         """
@@ -191,11 +191,10 @@ class AWSTrainingJob:
         )
         model_builder.build()  # Creates Model Resource
         endpoint = model_builder.deploy(
-            endpoint_name=endpoint_name,
+            endpoint_name=job_name,
             initial_instance_count=initial_instance_count,
             instance_type=endpoint_instance_type
         )  # Creates Endpoint Resource
-        print(f"ModelBuilder deploy finished: {endpoint}")
         return endpoint
 
     def run_hyperparameter_tuning_job(
@@ -207,7 +206,8 @@ class AWSTrainingJob:
             max_jobs,
             max_parallel_jobs,
             noisy_data_path,
-            clean_data_path
+            clean_data_path,
+            search_strategy
         ):
         """
         Configure the HyperparameterTuner for SageMaker hyperparameter tuning
@@ -216,7 +216,8 @@ class AWSTrainingJob:
         tuner = HyperparameterTuner(
             model_trainer=self._build_model_trainer(
                 hyperparameters={
-                    "epochs": epochs  # Keep the number of epochs static across all tuning jobs
+                    "epochs": epochs,    # Keep the number of epochs static across all tuning jobs
+                    "save_model": False  # Disable model saving for tuning jobs
                 }
             ),
             objective_metric_name=objective_metric_name,
@@ -230,7 +231,7 @@ class AWSTrainingJob:
             ],
             max_jobs=max_jobs,
             max_parallel_jobs=max_parallel_jobs,
-            strategy="Bayesian",
+            strategy=search_strategy,
             early_stopping_type="Auto",
             random_seed=42,
         )
@@ -279,12 +280,12 @@ if __name__ == "__main__":
     # Hyperparameter tuning specific arguments
     parser.add_argument("--max_jobs", type=int, default=10, help="Maximum number of hyperparameter tuning jobs to run.")
     parser.add_argument("--max_parallel_jobs", type=int, default=2, help="Maximum number of hyperparameter tuning jobs to run in parallel.")
+    parser.add_argument("--search_strategy", type=str, default="Bayesian", help="Search strategy for hyperparameter tuning (e.g., 'Bayesian', 'Random').")
 
     # Model Deployment specific arguments
     parser.add_argument("--endpoint_instance_type", type=str, default="ml.m5.large", help="Instance type for ModelBuilder endpoint deploy.")
     parser.add_argument("--endpoint_instance_count", type=int, default=1, help="Instance count for endpoint deploy.")
-    parser.add_argument("--endpoint_name", type=str, default=None, help="Optional endpoint name prefix (SDK may append a unique suffix).")
-    parser.add_argument("--skip_deploy", action="store_true", help="If set, skip ModelBuilder deploy after final training.")
+    parser.add_argument("--skip_deploy", action="store_true", help="If set, skip deploy after final training.")
     args = parser.parse_args()
 
     # Get instance type
@@ -298,68 +299,69 @@ if __name__ == "__main__":
         instance_count=args.instance_count,
         base_job_name="tensorflow-training-job"
     )
-    trainer, job_name = training_job.run_training_job(
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        reconstruction_loss_weight=args.reconstruction_loss_weight,
-        base_filters=args.base_filters,
-        n_layers=args.n_layers,
-        latent_space_dim=args.latent_space_dim,
-        noisy_data_path=args.noisy_path_uri,
-        clean_data_path=args.clean_path_uri
-    )
-
-    if trainer and not args.skip_deploy:
-        training_job.deploy_model(
-            job_name=job_name,
-            endpoint_instance_type=args.endpoint_instance_type,
-            initial_instance_count=args.endpoint_instance_count,
-            endpoint_name=args.endpoint_name,
-        )
-
-    # # Hyperparameter tuning configuration
-    # hyperparameter_ranges = {
-    #     "learning_rate": ContinuousParameter(0.00001, 0.001),
-    #     "batch_size": CategoricalParameter([16, 32, 64]),
-    #     "reconstruction_loss_weight":CategoricalParameter([100.0, 1_000.0, 10_000.0, 100_000.0, 1_000_000.0]),
-    #     "latent_space_dim": CategoricalParameter([16, 32, 64, 128, 256]),
-    #     "base_filters": CategoricalParameter([64, 128, 256]),
-    #     "n_layers": CategoricalParameter([3, 4, 5])
-    # }
-
-    # best_hyperparameters = training_job.run_hyperparameter_tuning_job(
-    #     hyperparameter_ranges=hyperparameter_ranges,
+    # trainer, job_name = training_job.run_training_job(
     #     epochs=args.epochs,
-    #     objective_metric_name="val_loss",
-    #     objective_type="Minimize",
-    #     max_jobs=args.max_jobs,
-    #     max_parallel_jobs=args.max_parallel_jobs,
+    #     batch_size=args.batch_size,
+    #     learning_rate=args.learning_rate,
+    #     reconstruction_loss_weight=args.reconstruction_loss_weight,
+    #     base_filters=args.base_filters,
+    #     n_layers=args.n_layers,
+    #     latent_space_dim=args.latent_space_dim,
     #     noisy_data_path=args.noisy_path_uri,
     #     clean_data_path=args.clean_path_uri
     # )
 
-    # if best_hyperparameters:
-    #     # Number of epochs for the final training job
-    #     EPOCHS = 150
-
-    #     # Final training with best hyperparameters, then ModelBuilder deploy from that job.
-    #     final_trainer = training_job.run_training_job(
-    #         epochs=EPOCHS,
-    #         batch_size=int(best_hyperparameters["batch_size"]),
-    #         learning_rate=float(best_hyperparameters["learning_rate"]),
-    #         reconstruction_loss_weight=float(best_hyperparameters["reconstruction_loss_weight"]),
-    #         base_filters=int(best_hyperparameters["base_filters"]),
-    #         n_layers=int(best_hyperparameters["n_layers"]),
-    #         latent_space_dim=int(best_hyperparameters["latent_space_dim"]),
-    #         noisy_data_path=args.noisy_path_uri,
-    #         clean_data_path=args.clean_path_uri
+    # job_name = "tensorflow-training-job-20260503133237"
+    # if job_name and not args.skip_deploy:
+    #     training_job.deploy_model(
+    #         job_name=job_name,
+    #         endpoint_instance_type=args.endpoint_instance_type,
+    #         initial_instance_count=args.endpoint_instance_count,
     #     )
 
-    #     if final_trainer and not args.skip_deploy:
-    #         training_job.deploy_model(
-    #             trainer=final_trainer,
-    #             endpoint_instance_type=args.endpoint_instance_type,
-    #             initial_instance_count=args.endpoint_instance_count,
-    #             endpoint_name=args.endpoint_name,
-    #         )
+    # Hyperparameter tuning configuration
+    hyperparameter_ranges = {
+        "learning_rate": ContinuousParameter(0.00001, 0.001),
+        "batch_size": CategoricalParameter([16, 32, 64]),
+        "reconstruction_loss_weight":CategoricalParameter([10_000.0, 100_000.0, 1_000_000.0]),
+        "latent_space_dim": CategoricalParameter([16, 32, 64, 128, 256]),
+        "base_filters": CategoricalParameter([64, 128, 256]),
+        "n_layers": CategoricalParameter([3, 4, 5])
+    }
+
+    best_hyperparameters = training_job.run_hyperparameter_tuning_job(
+        hyperparameter_ranges=hyperparameter_ranges,
+        epochs=args.epochs,
+        objective_metric_name="val_reconstruction_loss",
+        objective_type="Minimize",
+        max_jobs=args.max_jobs,
+        max_parallel_jobs=args.max_parallel_jobs,
+        noisy_data_path=args.noisy_path_uri,
+        clean_data_path=args.clean_path_uri,
+        search_strategy=args.search_strategy
+    )
+
+    if best_hyperparameters:
+        # Number of epochs for the final training job
+        EPOCHS = 150
+
+        # Final training with best hyperparameters, then ModelBuilder deploy from that job.
+        final_trainer, job_name = training_job.run_training_job(
+            epochs=EPOCHS,
+            batch_size=int(best_hyperparameters["batch_size"]),
+            learning_rate=float(best_hyperparameters["learning_rate"]),
+            reconstruction_loss_weight=float(best_hyperparameters["reconstruction_loss_weight"]),
+            base_filters=int(best_hyperparameters["base_filters"]),
+            n_layers=int(best_hyperparameters["n_layers"]),
+            latent_space_dim=int(best_hyperparameters["latent_space_dim"]),
+            noisy_data_path=args.noisy_path_uri,
+            clean_data_path=args.clean_path_uri
+        )
+
+        if job_name and not args.skip_deploy:
+            training_job.deploy_model(
+                job_name=job_name,
+                endpoint_instance_type=args.endpoint_instance_type,
+                initial_instance_count=args.endpoint_instance_count,
+                endpoint_name=args.endpoint_name,
+            )

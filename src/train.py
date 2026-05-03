@@ -139,6 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_layers', type=int, default=5, help='Number of convolutional layers in the VAE.')
     parser.add_argument('--val_size', type=float, default=0.15, help='Fraction of training data for validation')
     parser.add_argument('--test_size', type=float, default=0.15, help='Fraction of all samples for held-out test')
+    parser.add_argument('--save_model', type=bool, default=True, help='Whether to save the trained model to the specified model directory.')
 
     # Use SageMaker default if not passed
     parser.add_argument('--model_dir', type=str, default=f"output/{os.environ.get('TRAINING_JOB_NAME')}", help='Directory to save the trained model.')
@@ -188,7 +189,8 @@ if __name__ == "__main__":
     #     args.n_layers
     # )
 
-    vae.save(args.model_dir)
+    if args.save_model:
+        vae.save(args.model_dir)
 
     total_loss, reconstruction_loss, kl_loss = vae.evaluate(x_test, batch_size=args.batch_size)
     print(f"Test Loss: {total_loss}")
