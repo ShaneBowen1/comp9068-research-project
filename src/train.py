@@ -49,34 +49,41 @@ def load_lj_speech(spectrograms_path):
     x_train = np.array(x_train)      # Convert list to numpy array
     return x_train[..., np.newaxis], file_paths  # (num_samples, n_bins, n_frames, 1)
 
-def prepare_dataset(data, test_size=0.2):
+def prepare_dataset(data, val_size=0.15, test_size=0.15):
     """
     Prepares the dataset for training by splitting it into training and testing sets. The function takes the noisy and clean spectrogram data as input, along with a specified test size, and returns the training and testing data for both the noisy and clean spectrograms.
     """
-    train_data, test_data = train_test_split(data, test_size=test_size, random_state=42)
-    print(f"Training samples: {len(train_data)}, Testing samples: {len(test_data)}")
+    train_data, test_data = train_test_split(data, test_size=test_size+val_size, random_state=42)                # Split into train and test+val sets
+    test_data, val_data = train_test_split(test_data, test_size=val_size/(test_size+val_size), random_state=42)  # Split into val and test sets
+    print(f"Training samples: {len(train_data)},  Validation samples: {len(val_data)}, Testing samples: {len(test_data)}")
 
     # Unzip the data into separate arrays for noisy and clean spectrograms
     x_train_noisy, x_train_clean = zip(*train_data)
-    x_test_noisy, x_test_clean = zip(*test_data)    
+    x_val_noisy, x_val_clean = zip(*val_data)
+    x_test_noisy, x_test_clean = zip(*test_data)
 
     # Convert to numpy arrays
     x_train = (
         np.array(x_train_noisy),
         np.array(x_train_clean)
     )
+    x_val = (
+        np.array(x_val_noisy),
+        np.array(x_val_clean)
+    )
     x_test = (
         np.array(x_test_noisy),
         np.array(x_test_clean)
     )
     print("X Train Shapes:", x_train[0].shape, x_train[1].shape)
+    print("X Val Shapes:", x_val[0].shape, x_val[1].shape)
     print("X Test Shapes:", x_test[0].shape, x_test[1].shape)
 
-    return x_train, x_test
+    return x_train, x_val, x_test
 
 def train(
         x_train,
-        x_test,
+        x_val,
         learning_rate,
         batch_size,
         epochs,
@@ -95,30 +102,16 @@ def train(
     conv_kernels = tuple(3 for _ in range(n_layers))  # Example: (3, 3, 3, 3, 3) for n_layers=5
     conv_strides = tuple(2 for _ in range(n_layers-1)) + (1,)  # Example: (2, 2, 2, 2, 1) for n_layers=5
     
-    # vae = VAE(
-    #     input_shape=(256, 64, 1),
-    #     conv_filters=conv_filters,
-    #     conv_kernels=conv_kernels,
-    #     conv_strides=conv_strides,
-    #     latent_space_dim=latent_space_dim,
-    #     reconstruction_loss_weight=reconstruction_loss_weight
-    # )
+    input_shape = x_train[0].shape[1:]  # Get the shape of the spectrograms (n_bins, n_frames, 1)
+
     vae = VAE(
-        input_shape=(80, 64, 1),
+        input_shape=input_shape,
         conv_filters=conv_filters,
         conv_kernels=conv_kernels,
         conv_strides=conv_strides,
         latent_space_dim=latent_space_dim,
         reconstruction_loss_weight=reconstruction_loss_weight
     )
-    # vae = VAE(
-    #     input_shape=(28, 28, 1),
-    #     conv_filters=conv_filters,
-    #     conv_kernels=conv_kernels,
-    #     conv_strides=conv_strides,
-    #     latent_space_dim=latent_space_dim,
-    #     reconstruction_loss_weight=reconstruction_loss_weight
-    # )
 
     if LOCAL_FALSE_S3_TRUE:
         vae.s3_client = S3Client(
@@ -129,7 +122,7 @@ def train(
 
     vae.summary()
     vae.compile(learning_rate)
-    vae.train(x_train, x_test, batch_size=batch_size, epochs=epochs)
+    vae.train(x_train, x_val, batch_size=batch_size, epochs=epochs)
     return vae
 
 if __name__ == "__main__":
@@ -144,15 +137,11 @@ if __name__ == "__main__":
     parser.add_argument('--latent_space_dim', type=int, default=128, help='Dimensionality of the latent space in the VAE.')
     parser.add_argument('--base_filters', type=int, default=512, help='Number of filters in the first convolutional layer of the VAE.')
     parser.add_argument('--n_layers', type=int, default=5, help='Number of convolutional layers in the VAE.')
+    parser.add_argument('--val_size', type=float, default=0.15, help='Fraction of training data for validation')
+    parser.add_argument('--test_size', type=float, default=0.15, help='Fraction of all samples for held-out test')
 
     # Use SageMaker default if not passed
     parser.add_argument('--model_dir', type=str, default=f"output/{os.environ.get('TRAINING_JOB_NAME')}", help='Directory to save the trained model.')
-    # parser.add_argument(
-    #     '--model_dir',
-    #     type=str,
-    #     default=os.environ.get('SM_MODEL_DIR', f"output/{os.environ.get('TRAINING_JOB_NAME')}"),
-    #     help='Directory to save the trained model.'
-    # )
     parser.add_argument('--noisy_dir', type=str, default=os.environ.get('SM_CHANNEL_NOISY'), help='Directory containing the noisy training data.')
     parser.add_argument('--clean_dir', type=str, default=os.environ.get('SM_CHANNEL_CLEAN'), help='Directory contain the clean training data.')
 
@@ -163,10 +152,14 @@ if __name__ == "__main__":
     x_noisy, _ = load_lj_speech(args.noisy_dir)
     x_clean, _ = load_lj_speech(args.clean_dir)
     x_noisy, x_clean = make_same_amount(x_noisy, x_clean)
-    x_train, x_test = prepare_dataset(list(zip(x_noisy, x_clean)))
+    x_train, x_val, x_test = prepare_dataset(
+        list(zip(x_noisy, x_clean)),
+        val_size=args.val_size,
+        test_size=args.test_size
+    )
     vae = train(
         x_train,
-        x_test,
+        x_val,
         args.learning_rate,
         args.batch_size,
         args.epochs,
@@ -176,14 +169,16 @@ if __name__ == "__main__":
         args.n_layers
     )
 
-    # x_train, _, x_test, _ = load_mnist()
-    # x_train = x_train[:10000]  # Use a subset of the training data for faster training
-    # x_test = x_test[:2000]     # Use a subset of the testing data for faster evaluation
-    # print(x_train.shape)
-    # print(x_test.shape)
+    # x_train, _, _, _ = load_mnist()
+    # x_train = x_train[:2000]  # Use a subset of the data for faster training during development
+    # x_train, x_val, x_test = prepare_dataset(
+    #     list(zip(x_train, x_train)),  # Using x_train as both noisy and clean
+    #     val_size=args.val_size,
+    #     test_size=args.test_size
+    # )
     # vae = train(
-    #     (x_train, x_train),
-    #     (x_test, x_test),
+    #     x_train,
+    #     x_val,
     #     args.learning_rate,
     #     args.batch_size,
     #     args.epochs,
@@ -191,6 +186,11 @@ if __name__ == "__main__":
     #     args.latent_space_dim,
     #     args.base_filters,
     #     args.n_layers
-    # )  # Using x_train as both noisy and clean for MNIST
+    # )
 
     vae.save(args.model_dir)
+
+    total_loss, reconstruction_loss, kl_loss = vae.evaluate(x_test, batch_size=args.batch_size)
+    print(f"Test Loss: {total_loss}")
+    print(f"Reconstruction Loss: {reconstruction_loss}")
+    print(f"KL Loss: {kl_loss}")

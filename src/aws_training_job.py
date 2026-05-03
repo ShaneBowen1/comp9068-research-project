@@ -259,7 +259,6 @@ class AWSTrainingJob:
             return None
 
 if __name__ == "__main__":
-    
     parser = argparse.ArgumentParser(description="Run AWS training job.")
 
     # Hyperparameters for training
@@ -270,17 +269,17 @@ if __name__ == "__main__":
     parser.add_argument("--base_filters", type=int, default=256, help="Number of filters in the first convolutional layer of the VAE.")
     parser.add_argument("--n_layers", type=int, default=5, help="Number of convolutional layers in the VAE.")
     parser.add_argument("--latent_space_dim", type=int, default=128, help="Dimensionality of the latent space in the VAE.")
-    
+
     # SageMaker specific arguments
     parser.add_argument("--noisy_path_uri", type=str, required=True, help="S3 URI for noisy training data.")
     parser.add_argument("--clean_path_uri", type=str, required=True, help="S3 URI for clean training data.")
     parser.add_argument("--is_gpu", action="store_true", default=False, help="Flag to indicate whether to use GPU instance.")
     parser.add_argument("--instance_count", type=int, default=1, help="Number of instances for training.")
-    
+
     # Hyperparameter tuning specific arguments
     parser.add_argument("--max_jobs", type=int, default=10, help="Maximum number of hyperparameter tuning jobs to run.")
     parser.add_argument("--max_parallel_jobs", type=int, default=2, help="Maximum number of hyperparameter tuning jobs to run in parallel.")
-    
+
     # Model Deployment specific arguments
     parser.add_argument("--endpoint_instance_type", type=str, default="ml.m5.large", help="Instance type for ModelBuilder endpoint deploy.")
     parser.add_argument("--endpoint_instance_count", type=int, default=1, help="Instance count for endpoint deploy.")

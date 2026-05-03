@@ -8,7 +8,17 @@ import tensorflow as tf
 
 # Import Model from Keras
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Input, Conv2D, Flatten, Dense, Reshape, Conv2DTranspose, BatchNormalization, Lambda, Layer
+from tensorflow.keras.layers import (
+    Input,
+    Conv2D,
+    Flatten,
+    Dense,
+    Reshape,
+    Conv2DTranspose,
+    BatchNormalization,
+    Lambda,
+    Layer
+)
 from tensorflow.keras.metrics import Mean
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceLROnPlateau
@@ -106,7 +116,7 @@ class VAE:
             optimizer=Adam(learning_rate=learning_rate)
         )
 
-    def train(self, train_data, test_data, batch_size=32, epochs=50):
+    def train(self, train_data, val_data, batch_size=32, epochs=50):
         """
         Trains the VAE model on the provided training data (x_noisy and x_clean). This method uses the fit function of the Keras model to perform the training process, which involves feeding
         the input data through the encoder and decoder, calculating the loss, and updating the model weights using backpropagation. The batch_size parameter determines how many
@@ -145,7 +155,7 @@ class VAE:
         self.model.fit(
             [train_data[0], train_data[1]],
             None,
-            validation_data=([test_data[0], test_data[1]], None),
+            validation_data=([val_data[0], val_data[1]], None),
             batch_size=batch_size,
             epochs=epochs,
             callbacks=callbacks
@@ -370,7 +380,7 @@ class VAE:
         parameters. The layer_index parameter indicates which convolutional layer is being added, and x represents the input to this layer (which is the output of the previous layer).
         """
 
-        # add batch normalization
+        # Add a conv layer with batch normalization
         conv_layer = Conv2D(filters=self.conv_filters[layer_index],
                       kernel_size=self.conv_kernels[layer_index],
                       strides=self.conv_strides[layer_index],
@@ -382,9 +392,8 @@ class VAE:
 
     def _add_bottleneck(self, x):
         """
-        Adds the bottleneck layer to the encoder. The bottleneck layer is responsible for compressing the input data into a lower-dimensional representation (the latent space).
-        This method calculates the shape of the output from the last convolutional layer, flattens it, and then creates two dense layers to represent the mean (mu) and log variance
-        of the latent space distribution. The reparameterization trick is used to sample a point from this distribution.
+        Adds the bottleneck layer to the encoder. This method calculates the shape of the output from the last convolutional layer, flattens it,
+        and then creates two dense layers to represent the mean (mu) and log variance of the latent space distribution. The reparameterization trick is used to sample a point from this distribution.
         Returns (mu, log_variance, z) for use in CombinedLoss and encoder output.
         """
         self._shape_before_bottleneck = x.shape[1:]  # (7, 7, 8) (width ,height, channels)
@@ -400,13 +409,20 @@ class VAE:
         z = Lambda(sample_point_from_normal_distribution, output_shape=(self.latent_space_dim,), name='encoder_output')([mu, log_variance])
         return mu, log_variance, z
 
+    def evaluate(self, test_data, batch_size=32):
+        """
+        Evaluates the performance of the vae model on the provided test data. This method uses the evaluate function of the Keras model to calculate the loss and any specified metrics on the test dataset.
+        The evaluation results can be used to assess how well the vae has learned to reconstruct the input data and to identify any potential issues with overfitting or underfitting.
+        """
+        return self.model.evaluate([test_data[0], test_data[1]], None, batch_size=batch_size)
+
 if __name__ == "__main__":
     input_shape = (28, 28, 1)
     conv_filters = [32, 64, 64, 64]
     conv_kernels = [3, 3, 3, 3]
     conv_strides = [1, 2, 2, 1]
     latent_space_dim = 2
-    reconstruction_loss_weight = 1000
+    reconstruction_loss_weight = 1000.0
 
     vae = VAE(input_shape, conv_filters, conv_kernels, conv_strides, latent_space_dim, reconstruction_loss_weight)
     vae.summary()
